@@ -9,5 +9,9 @@
     "--query-driver=**",
     "--compile-commands-dir=/home/anbu/Z/projects/internship/antropi/conveyor/build"
   ],
-  "idf.flashType": "JTAG"
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.flashType": "JTAG",
+  "idf.port": "/dev/ttyACM0"
 }

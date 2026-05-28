@@ -1,0 +1,29 @@
+flowchart TD
+    User[Serial monitor user] --> Console[USB Serial/JTAG console stdin]
+    Console --> MicrorlTask[microrl_task]
+    MicrorlTask --> Parser[microrl parser]
+    Parser --> Commands{command}
+
+    Commands -->|setmotor M0 pwm dir| SetMotor[set M0 pwm and direction]
+    Commands -->|stopmotor M0| StopMotor[set M0 pwm to 0]
+    Commands -->|stop| StopAll[set every motor pwm to 0]
+    Commands -->|bad command or bad args| Error[print error]
+
+    SetMotor --> Mutex[motor_mutex]
+    StopMotor --> Mutex
+    StopAll --> Mutex
+
+    Mutex --> MotorStruct[(motors array\nM0 motor_t)]
+
+    MotorStruct --> ControllerTask[motor_controller_task]
+    ControllerTask --> DirectionGPIO[GPIO6 direction pin]
+    ControllerTask --> LEDC[LEDC PWM channel]
+    LEDC --> PWMGPIO[GPIO7 PWM pin]
+
+    DirectionGPIO --> MD30C[Cytron MD30C]
+    PWMGPIO --> MD30C
+    MD30C --> Motor[Motor]
+
+    FuturePCNT[future PCNT reader task] -.->|write position| MotorStruct
+    FutureMQTT[future MQTT task] -.->|write commands| MotorStruct
+    FuturePID[future PD/PID task] -.->|write pwm and direction| MotorStruct

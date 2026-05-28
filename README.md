@@ -16,6 +16,9 @@ Check your exact ESP32-S3 board pinout before wiring. GPIO7 and GPIO6 must be av
 
 Open the ESP-IDF monitor and type commands exactly as shown.
 
+This project is configured for the ESP32-S3 USB Serial/JTAG console, which
+usually appears as `/dev/ttyACM0` on Linux.
+
 ```text
 setmotor M0 128 1
 ```

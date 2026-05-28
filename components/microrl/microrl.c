@@ -2,12 +2,20 @@
 
 #include <stddef.h>
 
+/*
+ * Clears the current input line.
+ * The callbacks stay installed, but the typed command buffer becomes empty.
+ */
 static void microrl_clear(microrl_t *rl)
 {
     rl->length = 0;
     rl->buffer[0] = '\0';
 }
 
+/*
+ * Splits the current input line into argv-style tokens and runs the execute
+ * callback. Spaces and tabs separate arguments.
+ */
 static void microrl_run_line(microrl_t *rl)
 {
     const char *argv[MICRORL_MAX_ARGS];
@@ -42,6 +50,10 @@ static void microrl_run_line(microrl_t *rl)
     }
 }
 
+/*
+ * Initializes a microrl object with an empty command buffer and a print
+ * callback. The execute callback is set later.
+ */
 void microrl_init(microrl_t *rl, microrl_print_t print)
 {
     rl->print = print;
@@ -50,11 +62,20 @@ void microrl_init(microrl_t *rl, microrl_print_t print)
     microrl_clear(rl);
 }
 
+/*
+ * Installs the callback that runs when the user presses enter on a complete
+ * command line.
+ */
 void microrl_set_execute_callback(microrl_t *rl, microrl_execute_t execute)
 {
     rl->execute = execute;
 }
 
+/*
+ * Handles one input character.
+ * Printable characters are appended, backspace edits the buffer, and enter
+ * runs the completed command line.
+ */
 void microrl_insert_char(microrl_t *rl, int ch)
 {
     if (ch == '\n' && rl->last_char_was_cr == 1) {

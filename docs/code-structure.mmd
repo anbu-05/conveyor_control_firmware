@@ -1,0 +1,63 @@
+flowchart TD
+    AppMain["app_main()"] --> MutexCreate["xSemaphoreCreateMutex()"]
+    AppMain --> ConfigureConsole["configure_console()"]
+    AppMain --> ConfigurePWM["configure_pwm()"]
+    AppMain --> CreateMicrorlTask["xTaskCreate(microrl_task)"]
+    AppMain --> CreateMotorTask["xTaskCreate(motor_controller_task, &motors[0])"]
+
+    ConfigureConsole --> StdioSetup["setvbuf(stdin/stdout)"]
+
+    ConfigurePWM --> LedcTimer["ledc_timer_config()"]
+    ConfigurePWM --> DirGPIOSetup["gpio_set_direction() and gpio_set_level()"]
+    ConfigurePWM --> LedcChannel["ledc_channel_config()"]
+
+    subgraph MainFile["main/main.c"]
+        MotorStruct["motor_t struct"]
+        MotorsArray["motors[MOTOR_COUNT]"]
+        MotorMutex["motor_mutex"]
+        ConsolePrint["console_print()"]
+        FindMotor["find_motor()"]
+        ExecuteCommand["execute_command()"]
+        MicrorlTask["microrl_task()"]
+        MotorControllerTask["motor_controller_task()"]
+    end
+
+    MotorStruct --> MotorsArray
+    MotorsArray --> MotorMutex
+
+    MicrorlTask --> MicrorlInit["microrl_init()"]
+    MicrorlTask --> MicrorlSetCallback["microrl_set_execute_callback()"]
+    MicrorlTask --> ConsoleRead["getchar() from stdin"]
+    MicrorlTask --> MicrorlInsert["microrl_insert_char()"]
+
+    MicrorlSetCallback --> ExecuteCommand
+    ExecuteCommand --> CommandChecks["check command name and arguments"]
+    ExecuteCommand --> FindMotor
+    ExecuteCommand --> ConsolePrint
+    ExecuteCommand --> MotorMutex
+    ExecuteCommand --> MotorsArray
+
+    MotorControllerTask --> MotorMutex
+    MotorControllerTask --> MotorsArray
+    MotorControllerTask --> GpioOutput["gpio_set_level()"]
+    MotorControllerTask --> LedcDuty["ledc_set_duty()"]
+    MotorControllerTask --> LedcUpdate["ledc_update_duty()"]
+
+    subgraph MicrorlComponent["components/microrl"]
+        MicrorlHeader["microrl.h"]
+        MicrorlStruct["microrl_t struct"]
+        MicrorlInit
+        MicrorlSetCallback
+        MicrorlInsert
+        MicrorlRunLine["microrl_run_line()"]
+        MicrorlClear["microrl_clear()"]
+    end
+
+    MicrorlHeader --> MicrorlStruct
+    MicrorlInit --> MicrorlClear
+    MicrorlInsert --> MicrorlRunLine
+    MicrorlRunLine --> ExecuteCommand
+
+    SharedStateNote["shared state is motors array plus motor_mutex"]
+    SharedStateNote --> MotorsArray
+    SharedStateNote --> MotorMutex
