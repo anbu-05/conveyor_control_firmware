@@ -6,9 +6,9 @@ ESP-IDF starter project for controlling one motor through a Cytron MD30C.
 
 Implemented a strict serial command layer using a vendored local `microrl` component. The app has one motor, `M0`, controlled by a FreeRTOS motor controller task.
 
-Added function-level comments in `main/main.c` and `components/microrl/microrl.c` so future readers can quickly understand each function's job.
+Added function-level comments in the main app source files and `components/microrl/microrl.c` so future readers can quickly understand each function's job.
 
-Simplified `main/main.c` by removing small helper functions that were not pulling their weight in a one-motor version. Command handling now lives mostly inside `execute_command()`, with `find_motor()` kept because it connects command motor names to the motor table.
+Simplified the app source by removing small helper functions that were not pulling their weight in a one-motor version. Command handling now lives in `main/command_task.c`, with `find_motor()` kept in shared state because it connects command motor names to the motor table.
 
 Troubleshooting update: command input now uses `stdin` instead of directly reading `UART_NUM_0`, and the project config uses USB Serial/JTAG as the primary console. This matches `/dev/ttyACM0` on ESP32-S3 boards and avoids monitor write timeouts caused by UART0 GPIO43/44 console input mismatch.
 
@@ -35,7 +35,12 @@ EVENT SENSOR S0 1 0
 
 - `CMakeLists.txt`: Top-level ESP-IDF project file.
 - `main/CMakeLists.txt`: Main component build file. Depends on ESP-IDF GPIO, LEDC, and `microrl`.
-- `main/main.c`: Motor struct, sensor struct, strict command parser, console input task, motor controller task, and sensor reader task.
+- `main/main.c`: ESP-IDF app startup, mutex creation, setup calls, task creation, and `READY conveyor`.
+- `main/app_state.h`: Shared structs, constants, globals, and task/setup prototypes.
+- `main/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
+- `main/command_task.c`: Strict command parser and `microrl_task`.
+- `main/motor_task.c`: LEDC/direction GPIO setup and `motor_controller_task`.
+- `main/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
 - `components/microrl/`: Small vendored microrl-style command parser used by this app.
 - `docs/architecture.mmd`: Mermaid chart of the current command and motor-control flow.
 - `docs/code-structure.mmd`: Mermaid chart of files, functions, callbacks, and shared state.
@@ -100,7 +105,8 @@ Invalid command names, motor names, argument counts, PWM values, or direction va
 
 ## Architecture
 
-- `microrl_task`: reads console stdin input and edits the motor struct.
+- `main/main.c`: creates shared mutexes, configures console/PWM/sensors, starts tasks.
+- `microrl_task`: reads console stdin input and edits shared state through command handlers.
 - `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.

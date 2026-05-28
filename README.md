@@ -122,6 +122,14 @@ idf.py build
 idf.py flash monitor
 ```
 
+## Source Layout
+
+- `main/main.c`: app startup, mutex creation, hardware setup calls, task creation.
+- `main/app_state.c`: shared motor/sensor state, console printing, motor lookup.
+- `main/command_task.c`: microrl serial command task and command handling.
+- `main/motor_task.c`: motor PWM/direction setup and output task.
+- `main/sensor_task.c`: sensor GPIO setup and polling task.
+
 ## Current Limits
 
 - Only one motor, `M0`, is configured.
