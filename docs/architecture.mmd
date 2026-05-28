@@ -7,6 +7,7 @@ flowchart TD
     Commands -->|setmotor M0 pwm dir| SetMotor[set M0 pwm and direction]
     Commands -->|stopmotor M0| StopMotor[set M0 pwm to 0]
     Commands -->|stop| StopAll[set every motor pwm to 0]
+    Commands -->|watchsensors on/off| WatchSensors[set sensor watch flag]
     Commands -->|bad command or bad args| Error[print error]
 
     SetMotor --> Mutex[motor_mutex]
@@ -23,6 +24,15 @@ flowchart TD
     DirectionGPIO --> MD30C[Cytron MD30C]
     PWMGPIO --> MD30C
     MD30C --> Motor[Motor]
+
+    SensorGPIO[S0 GPIO4 and S1 GPIO5] --> SensorTask[sensor_reader_task]
+    SensorTask --> SensorStruct[(sensors array)]
+    SensorTask -->|watch enabled and value changed| SensorEvent[EVENT SENSOR name old new]
+    WatchSensors --> SensorWatchFlag[sensor_watch_enabled]
+    SensorWatchFlag --> SensorTask
+    SensorEvent --> PythonWrapper[Python wrapper]
+    Error --> PythonWrapper
+    MicrorlTask -->|OK and ERR lines| PythonWrapper
 
     FuturePCNT[future PCNT reader task] -.->|write position| MotorStruct
     FutureMQTT[future MQTT task] -.->|write commands| MotorStruct

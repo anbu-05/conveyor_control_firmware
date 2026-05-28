@@ -2,27 +2,37 @@ flowchart TD
     AppMain["app_main()"] --> MutexCreate["xSemaphoreCreateMutex()"]
     AppMain --> ConfigureConsole["configure_console()"]
     AppMain --> ConfigurePWM["configure_pwm()"]
+    AppMain --> ConfigureSensors["configure_sensors()"]
     AppMain --> CreateMicrorlTask["xTaskCreate(microrl_task)"]
     AppMain --> CreateMotorTask["xTaskCreate(motor_controller_task, &motors[0])"]
+    AppMain --> CreateSensorTask["xTaskCreate(sensor_reader_task)"]
 
     ConfigureConsole --> StdioSetup["setvbuf(stdin/stdout)"]
 
     ConfigurePWM --> LedcTimer["ledc_timer_config()"]
     ConfigurePWM --> DirGPIOSetup["gpio_set_direction() and gpio_set_level()"]
     ConfigurePWM --> LedcChannel["ledc_channel_config()"]
+    ConfigureSensors --> SensorGPIOConfig["gpio_config(input, no pulls)"]
+    ConfigureSensors --> SensorInitialRead["gpio_get_level()"]
 
     subgraph MainFile["main/main.c"]
         MotorStruct["motor_t struct"]
         MotorsArray["motors[MOTOR_COUNT]"]
+        SensorStruct["sensor_t struct"]
+        SensorsArray["sensors[SENSOR_COUNT]"]
         MotorMutex["motor_mutex"]
+        ConsoleMutex["console_mutex"]
         ConsolePrint["console_print()"]
+        ConsolePrintf["console_printf()"]
         FindMotor["find_motor()"]
         ExecuteCommand["execute_command()"]
         MicrorlTask["microrl_task()"]
         MotorControllerTask["motor_controller_task()"]
+        SensorReaderTask["sensor_reader_task()"]
     end
 
     MotorStruct --> MotorsArray
+    SensorStruct --> SensorsArray
     MotorsArray --> MotorMutex
 
     MicrorlTask --> MicrorlInit["microrl_init()"]
@@ -34,14 +44,21 @@ flowchart TD
     ExecuteCommand --> CommandChecks["check command name and arguments"]
     ExecuteCommand --> FindMotor
     ExecuteCommand --> ConsolePrint
+    ExecuteCommand --> ConsolePrintf
     ExecuteCommand --> MotorMutex
     ExecuteCommand --> MotorsArray
+    ExecuteCommand --> SensorWatchFlag["sensor_watch_enabled"]
 
     MotorControllerTask --> MotorMutex
     MotorControllerTask --> MotorsArray
     MotorControllerTask --> GpioOutput["gpio_set_level()"]
     MotorControllerTask --> LedcDuty["ledc_set_duty()"]
     MotorControllerTask --> LedcUpdate["ledc_update_duty()"]
+
+    SensorReaderTask --> SensorsArray
+    SensorReaderTask --> SensorRead["gpio_get_level()"]
+    SensorReaderTask --> SensorWatchFlag
+    SensorReaderTask --> ConsolePrintf
 
     subgraph MicrorlComponent["components/microrl"]
         MicrorlHeader["microrl.h"]
@@ -58,6 +75,9 @@ flowchart TD
     MicrorlInsert --> MicrorlRunLine
     MicrorlRunLine --> ExecuteCommand
 
-    SharedStateNote["shared state is motors array plus motor_mutex"]
+    SharedStateNote["shared state is motors array, sensors array, watch flag, motor_mutex, console_mutex"]
     SharedStateNote --> MotorsArray
+    SharedStateNote --> SensorsArray
+    SharedStateNote --> SensorWatchFlag
     SharedStateNote --> MotorMutex
+    SharedStateNote --> ConsoleMutex

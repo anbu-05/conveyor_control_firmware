@@ -34,7 +34,7 @@ static void microrl_run_line(microrl_t *rl)
         if (in_token == 0) {
             if (argc >= MICRORL_MAX_ARGS) {
                 if (rl->print != NULL) {
-                    rl->print("too many arguments\r\n");
+                    rl->print("ERR BAD_ARGS\r\n");
                 }
                 return;
             }
@@ -86,10 +86,6 @@ void microrl_insert_char(microrl_t *rl, int ch)
     rl->last_char_was_cr = (ch == '\r') ? 1 : 0;
 
     if (ch == '\r' || ch == '\n') {
-        if (rl->print != NULL) {
-            rl->print("\r\n");
-        }
-
         rl->buffer[rl->length] = '\0';
         microrl_run_line(rl);
         microrl_clear(rl);
@@ -100,9 +96,6 @@ void microrl_insert_char(microrl_t *rl, int ch)
         if (rl->length > 0) {
             rl->length--;
             rl->buffer[rl->length] = '\0';
-            if (rl->print != NULL) {
-                rl->print("\b \b");
-            }
         }
         return;
     }
@@ -113,7 +106,7 @@ void microrl_insert_char(microrl_t *rl, int ch)
 
     if (rl->length >= MICRORL_BUFFER_SIZE - 1) {
         if (rl->print != NULL) {
-            rl->print("\r\nline too long\r\n");
+            rl->print("ERR BAD_ARGS\r\n");
         }
         microrl_clear(rl);
         return;
@@ -122,9 +115,4 @@ void microrl_insert_char(microrl_t *rl, int ch)
     rl->buffer[rl->length] = (char)ch;
     rl->length++;
     rl->buffer[rl->length] = '\0';
-
-    if (rl->print != NULL) {
-        char text[2] = {(char)ch, '\0'};
-        rl->print(text);
-    }
 }

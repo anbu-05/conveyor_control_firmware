@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -18,6 +19,9 @@
 #define MOTOR_CONTROLLER_DELAY_MS 20
 #define MICRORL_TASK_STACK_SIZE 4096
 #define MOTOR_TASK_STACK_SIZE 3072
+#define SENSOR_COUNT 2
+#define SENSOR_TASK_STACK_SIZE 3072
+#define SENSOR_POLL_DELAY_MS 20
 
 typedef struct {
     const char *name;
@@ -31,8 +35,17 @@ typedef struct {
     ledc_channel_t ledc_channel;
 } motor_t;
 
+typedef struct {
+    const char *name;
+    gpio_num_t gpio;
+    int value;
+    int last_value;
+} sensor_t;
+
 static const char *TAG = "conveyor";
 static SemaphoreHandle_t motor_mutex;
+static SemaphoreHandle_t console_mutex;
+static volatile bool sensor_watch_enabled = false;
 
 /* Keep all motor state and pin config together so more motors can be added later. */
 static motor_t motors[MOTOR_COUNT] = {
@@ -49,15 +62,62 @@ static motor_t motors[MOTOR_COUNT] = {
     },
 };
 
+/* Sensor state lives in a table so more sensors can be added later. */
+static sensor_t sensors[SENSOR_COUNT] = {
+    {
+        .name = "S0",
+        .gpio = GPIO_NUM_4,
+        .value = 1,
+        .last_value = 1,
+    },
+    {
+        .name = "S1",
+        .gpio = GPIO_NUM_5,
+        .value = 1,
+        .last_value = 1,
+    },
+};
+
 /*
- * Prints text back to the serial monitor.
+ * Prints one complete machine-readable line back to the serial monitor.
  * Microrl uses this as its output callback, and the command handlers use it
- * for short status and error messages.
+ * for short status and error messages. The mutex keeps command responses and
+ * sensor events from mixing together.
  */
 static void console_print(const char *text)
 {
+    if (console_mutex != NULL) {
+        xSemaphoreTake(console_mutex, portMAX_DELAY);
+    }
+
     printf("%s", text);
     fflush(stdout);
+
+    if (console_mutex != NULL) {
+        xSemaphoreGive(console_mutex);
+    }
+}
+
+/*
+ * Prints a formatted machine-readable line.
+ * This is used for sensor events, where the sensor name and values change.
+ */
+static void console_printf(const char *format, ...)
+{
+    va_list args;
+
+    if (console_mutex != NULL) {
+        xSemaphoreTake(console_mutex, portMAX_DELAY);
+    }
+
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+    fflush(stdout);
+
+    if (console_mutex != NULL) {
+        xSemaphoreGive(console_mutex);
+    }
 }
 
 /*
@@ -89,36 +149,36 @@ static int execute_command(int argc, const char *const *argv)
 
     if (strcmp(argv[0], "setmotor") == 0) {
         if (argc != 4) {
-            console_print("usage: setmotor M0 128 1\r\n");
+            console_print("ERR BAD_ARGS\r\n");
             return 0;
         }
 
         motor = find_motor(argv[1]);
         if (motor == NULL) {
-            console_print("unknown motor\r\n");
+            console_print("ERR UNKNOWN_MOTOR\r\n");
             return 0;
         }
 
         if (argv[2][0] == '\0') {
-            console_print("pwm must be 0 to 255\r\n");
+            console_print("ERR BAD_PWM\r\n");
             return 0;
         }
 
         for (int i = 0; argv[2][i] != '\0'; i++) {
             if (argv[2][i] < '0' || argv[2][i] > '9') {
-                console_print("pwm must be 0 to 255\r\n");
+                console_print("ERR BAD_PWM\r\n");
                 return 0;
             }
         }
 
         if (argv[3][0] == '\0') {
-            console_print("direction must be 0 or 1\r\n");
+            console_print("ERR BAD_DIRECTION\r\n");
             return 0;
         }
 
         for (int i = 0; argv[3][i] != '\0'; i++) {
             if (argv[3][i] < '0' || argv[3][i] > '9') {
-                console_print("direction must be 0 or 1\r\n");
+                console_print("ERR BAD_DIRECTION\r\n");
                 return 0;
             }
         }
@@ -127,12 +187,12 @@ static int execute_command(int argc, const char *const *argv)
         direction = strtol(argv[3], NULL, 10);
 
         if (pwm < 0 || pwm > MOTOR_PWM_MAX) {
-            console_print("pwm must be 0 to 255\r\n");
+            console_print("ERR BAD_PWM\r\n");
             return 0;
         }
 
         if (direction != 0 && direction != 1) {
-            console_print("direction must be 0 or 1\r\n");
+            console_print("ERR BAD_DIRECTION\r\n");
             return 0;
         }
 
@@ -141,19 +201,19 @@ static int execute_command(int argc, const char *const *argv)
         motor->direction = (int)direction;
         xSemaphoreGive(motor_mutex);
 
-        console_print("ok\r\n");
+        console_printf("OK SETMOTOR %s\r\n", motor->name);
         return 0;
     }
 
     if (strcmp(argv[0], "stopmotor") == 0) {
         if (argc != 2) {
-            console_print("usage: stopmotor M0\r\n");
+            console_print("ERR BAD_ARGS\r\n");
             return 0;
         }
 
         motor = find_motor(argv[1]);
         if (motor == NULL) {
-            console_print("unknown motor\r\n");
+            console_print("ERR UNKNOWN_MOTOR\r\n");
             return 0;
         }
 
@@ -161,13 +221,13 @@ static int execute_command(int argc, const char *const *argv)
         motor->pwm = 0;
         xSemaphoreGive(motor_mutex);
 
-        console_print("ok\r\n");
+        console_printf("OK STOPMOTOR %s\r\n", motor->name);
         return 0;
     }
 
     if (strcmp(argv[0], "stop") == 0) {
         if (argc != 1) {
-            console_print("usage: stop\r\n");
+            console_print("ERR BAD_ARGS\r\n");
             return 0;
         }
 
@@ -177,11 +237,33 @@ static int execute_command(int argc, const char *const *argv)
         }
         xSemaphoreGive(motor_mutex);
 
-        console_print("ok\r\n");
+        console_print("OK STOP\r\n");
         return 0;
     }
 
-    console_print("unknown command\r\n");
+    if (strcmp(argv[0], "watchsensors") == 0) {
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[1], "on") == 0) {
+            sensor_watch_enabled = true;
+            console_print("OK WATCHSENSORS ON\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[1], "off") == 0) {
+            sensor_watch_enabled = false;
+            console_print("OK WATCHSENSORS OFF\r\n");
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    console_print("ERR UNKNOWN_COMMAND\r\n");
     return 0;
 }
 
@@ -229,6 +311,27 @@ static void configure_pwm(void)
 }
 
 /*
+ * Configures all binary sensor pins as plain inputs.
+ * External pullups are used, so the ESP32 internal pullup and pulldown are off.
+ */
+static void configure_sensors(void)
+{
+    for (int i = 0; i < SENSOR_COUNT; i++) {
+        gpio_config_t sensor_gpio_config = {
+            .pin_bit_mask = 1ULL << sensors[i].gpio,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+
+        ESP_ERROR_CHECK(gpio_config(&sensor_gpio_config));
+        sensors[i].value = gpio_get_level(sensors[i].gpio);
+        sensors[i].last_value = sensors[i].value;
+    }
+}
+
+/*
  * FreeRTOS task for the serial command layer.
  * It reads bytes from stdin, feeds them into microrl, and lets microrl call
  * execute_command when a full line is entered.
@@ -237,32 +340,52 @@ static void microrl_task(void *arg)
 {
     microrl_t rl;
     int ch = 0;
-    int last_char_was_cr = 0;
 
     (void)arg;
 
     microrl_init(&rl, console_print);
     microrl_set_execute_callback(&rl, execute_command);
-    console_print("\r\nconveyor ready\r\n> ");
 
     /* This task only parses commands and updates the motor struct. */
     while (1) {
         ch = getchar();
 
         if (ch != EOF) {
-            int print_prompt = (ch == '\r' || (ch == '\n' && last_char_was_cr == 0));
-
             microrl_insert_char(&rl, ch);
-
-            if (print_prompt) {
-                console_print("> ");
-            }
-
-            last_char_was_cr = (ch == '\r') ? 1 : 0;
         } else {
             clearerr(stdin);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
+    }
+}
+
+/*
+ * FreeRTOS task for binary sensor polling.
+ * It records every reading and prints an event line only when watching is on
+ * and a sensor value changes.
+ */
+static void sensor_reader_task(void *arg)
+{
+    int value = 0;
+
+    (void)arg;
+
+    while (1) {
+        for (int i = 0; i < SENSOR_COUNT; i++) {
+            value = gpio_get_level(sensors[i].gpio);
+
+            if (value != sensors[i].last_value) {
+                sensors[i].value = value;
+
+                if (sensor_watch_enabled) {
+                    console_printf("EVENT SENSOR %s %d %d\r\n", sensors[i].name, sensors[i].last_value, value);
+                }
+
+                sensors[i].last_value = value;
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(SENSOR_POLL_DELAY_MS));
     }
 }
 
@@ -305,9 +428,19 @@ void app_main(void)
         return;
     }
 
+    console_mutex = xSemaphoreCreateMutex();
+    if (console_mutex == NULL) {
+        ESP_LOGE(TAG, "failed to create console mutex");
+        return;
+    }
+
     configure_console();
     configure_pwm();
+    configure_sensors();
 
     xTaskCreate(microrl_task, "microrl", MICRORL_TASK_STACK_SIZE, NULL, 5, NULL);
     xTaskCreate(motor_controller_task, "motor_ctrl_M0", MOTOR_TASK_STACK_SIZE, &motors[0], 5, NULL);
+    xTaskCreate(sensor_reader_task, "sensor_reader", SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
+
+    console_print("READY conveyor\r\n");
 }
