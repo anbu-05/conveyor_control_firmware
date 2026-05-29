@@ -115,6 +115,7 @@ Current editable keys:
 run_pwm
 run_speed_counts_per_sec
 speed_kp
+speed_pwm_scale_milli
 done_hold_ms
 tx_detect_timeout_ms
 tx_clear_timeout_ms
@@ -227,6 +228,9 @@ idf.py flash monitor
 - Two binary sensors, `S0` and `S1`, are configured.
 - Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
 - P-only speed control is implemented in `pid_controller_task`.
+- Speed control direction follows the target speed sign.
+- P output changes `planned_speed`; `planned_speed` maps to PWM through `speed_pwm_scale_milli`.
+- Speed measurement uses a 5-sample moving average.
 - Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
 - Encoder filtering, zeroing, MQTT publishing, I/D control, and position control are not implemented yet.

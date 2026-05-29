@@ -19,6 +19,7 @@ motor_t motors[MOTOR_COUNT] = {
         .position = 0,
         .target_pos = 0,
         .target_speed = 0,
+        .planned_speed = 0,
         .current_speed = 0,
         .pos_control = false,
         .speed_control = false,
@@ -116,6 +117,7 @@ void move_main_motor(int direction, int pwm)
     motors[0].direction = direction;
     motors[0].pwm = pwm;
     motors[0].target_speed = 0;
+    motors[0].planned_speed = 0;
     motors[0].speed_control = false;
     xSemaphoreGive(motor_mutex);
 }
@@ -128,8 +130,14 @@ void move_main_motor_speed(int direction, int speed)
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     if (direction == 0) {
+        if (motors[0].target_speed > 0) {
+            motors[0].planned_speed = 0;
+        }
         motors[0].target_speed = -speed;
     } else {
+        if (motors[0].target_speed < 0) {
+            motors[0].planned_speed = 0;
+        }
         motors[0].target_speed = speed;
     }
     motors[0].speed_control = true;
@@ -142,6 +150,7 @@ void stop_all_motors(void)
     for (int i = 0; i < MOTOR_COUNT; i++) {
         motors[i].pwm = 0;
         motors[i].target_speed = 0;
+        motors[i].planned_speed = 0;
         motors[i].speed_control = false;
     }
     xSemaphoreGive(motor_mutex);

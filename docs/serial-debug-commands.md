@@ -375,6 +375,7 @@ Output:
 CONFIG run_pwm 128
 CONFIG run_speed_counts_per_sec 100
 CONFIG speed_kp 0.500
+CONFIG speed_pwm_scale_milli 100
 CONFIG done_hold_ms 100
 CONFIG tx_detect_timeout_ms 5000
 CONFIG tx_clear_timeout_ms 5000
@@ -444,6 +445,7 @@ Editable keys:
 run_pwm                  0..255
 run_speed_counts_per_sec 0..100000
 speed_kp_milli           0..100000
+speed_pwm_scale_milli    0..100000
 done_hold_ms             0..60000
 tx_detect_timeout_ms     1..600000
 tx_clear_timeout_ms      1..600000

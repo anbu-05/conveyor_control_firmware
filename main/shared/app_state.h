@@ -34,6 +34,7 @@ typedef struct {
     int position;
     int target_pos;
     int target_speed;
+    int planned_speed;
     int current_speed;
     bool pos_control;
     bool speed_control;

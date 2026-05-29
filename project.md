@@ -16,13 +16,15 @@ Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task 
 
 Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
 
-Added a dedicated P-only speed controller task. `pid_controller_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, stores `M0.position` and `M0.current_speed`, and writes PWM/direction requests for `motor_controller_task` to apply. The motor controller task remains a pure actuator loop.
+Added a dedicated P-only speed controller task. `pid_controller_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, and writes PWM/direction requests for `motor_controller_task` to apply. The motor controller task remains a pure actuator loop.
+
+Speed control now uses an acceleration-style planned speed. P output changes `M0.planned_speed`, and `planned_speed` maps linearly to PWM through `speed_pwm_scale_milli`. Motor direction comes only from the sign of `target_speed`.
 
 Added a central conveyor job state machine for high-level tray transfer jobs. MQTT and microrl can submit TX/RX/emergency/clear-error commands to the same queue, while the state machine owns the active job. DONE states auto-return to `IDLE` after a short report hold.
 
 Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/broker/topic config, `espressif/mqtt` dependency, WiFi/MQTT setup in its own module, JSON high-level command parsing, and feedback publishing. MQTT does not expose raw PWM commands.
 
-Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
+Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, `speed_pwm_scale_milli`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
@@ -76,6 +78,7 @@ EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
 CONFIG run_pwm 128
 CONFIG run_speed_counts_per_sec 100
 CONFIG speed_kp 0.500
+CONFIG speed_pwm_scale_milli 100
 ```
 
 ## Files
@@ -119,6 +122,7 @@ CONFIG speed_kp 0.500
 - `position`
 - `target_pos`
 - `target_speed`
+- `planned_speed`
 - `current_speed`
 - `pos_control`
 - `speed_control`
@@ -231,7 +235,7 @@ MQTT defaults:
 - `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
 - `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
 - `conveyor_job_task`: owns the TX/RX state machine and submits speed/stop requests to the motor state.
-- `pid_controller_task`: reads PCNT, calculates speed, runs P-only speed control, and writes PWM/direction requests.
+- `pid_controller_task`: reads PCNT, calculates smoothed speed, updates planned speed through P-only acceleration control, and writes PWM/direction requests.
 - `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM only.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
@@ -273,6 +277,9 @@ Current high-level job states:
 - Encoder PCNT uses full x4 quadrature counting.
 - Encoder PCNT uses a 1000 ns hardware glitch filter to reject very short noise pulses.
 - PID speed control is P-only. Integral and derivative terms are not implemented yet.
+- P output changes `planned_speed`, not PWM directly.
+- `planned_speed` maps to PWM with runtime config `speed_pwm_scale_milli`.
+- Speed measurement uses a 5-sample moving average.
 - Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.
 
 ## Next Useful Commands

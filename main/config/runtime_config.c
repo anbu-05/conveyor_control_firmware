@@ -14,6 +14,7 @@ typedef struct {
     int32_t run_pwm;
     int32_t run_speed_counts_per_sec;
     int32_t speed_kp_milli;
+    int32_t speed_pwm_scale_milli;
     int32_t done_hold_ms;
     int32_t tx_detect_timeout_ms;
     int32_t tx_clear_timeout_ms;
@@ -28,6 +29,7 @@ static const runtime_config_t default_config = {
     .run_pwm = CONVEYOR_RUN_PWM,
     .run_speed_counts_per_sec = CONVEYOR_RUN_SPEED_COUNTS_PER_SEC,
     .speed_kp_milli = CONVEYOR_SPEED_KP_MILLI,
+    .speed_pwm_scale_milli = CONVEYOR_SPEED_PWM_SCALE_MILLI,
     .done_hold_ms = CONVEYOR_DONE_HOLD_MS,
     .tx_detect_timeout_ms = CONVEYOR_TIMEOUT_TX_DETECT_MS,
     .tx_clear_timeout_ms = CONVEYOR_TIMEOUT_TX_CLEAR_MS,
@@ -45,6 +47,9 @@ static bool value_is_valid(const char *name, int32_t value)
         return value >= 0 && value <= 100000;
     }
     if (strcmp(name, "speed_kp_milli") == 0) {
+        return value >= 0 && value <= 100000;
+    }
+    if (strcmp(name, "speed_pwm_scale_milli") == 0) {
         return value >= 0 && value <= 100000;
     }
     if (strcmp(name, "done_hold_ms") == 0) {
@@ -79,6 +84,9 @@ static const char *storage_key(const char *name)
     }
     if (strcmp(name, "speed_kp_milli") == 0) {
         return "speed_kp";
+    }
+    if (strcmp(name, "speed_pwm_scale_milli") == 0) {
+        return "speed_scale";
     }
     if (strcmp(name, "done_hold_ms") == 0) {
         return "done_hold_ms";
@@ -125,6 +133,10 @@ static bool set_ram_value(const char *name, int32_t value)
         runtime_config.speed_kp_milli = value;
         return true;
     }
+    if (strcmp(name, "speed_pwm_scale_milli") == 0) {
+        runtime_config.speed_pwm_scale_milli = value;
+        return true;
+    }
     if (strcmp(name, "done_hold_ms") == 0) {
         runtime_config.done_hold_ms = value;
         return true;
@@ -169,6 +181,10 @@ bool runtime_config_get_value(const char *name, int32_t *value)
     }
     if (strcmp(name, "speed_kp_milli") == 0) {
         *value = runtime_config.speed_kp_milli;
+        return true;
+    }
+    if (strcmp(name, "speed_pwm_scale_milli") == 0) {
+        *value = runtime_config.speed_pwm_scale_milli;
         return true;
     }
     if (strcmp(name, "done_hold_ms") == 0) {
@@ -254,6 +270,9 @@ static bool save_all_defaults(void)
         err = nvs_set_i32(handle, storage_key("speed_kp_milli"), default_config.speed_kp_milli);
     }
     if (err == ESP_OK) {
+        err = nvs_set_i32(handle, storage_key("speed_pwm_scale_milli"), default_config.speed_pwm_scale_milli);
+    }
+    if (err == ESP_OK) {
         err = nvs_set_i32(handle, storage_key("done_hold_ms"), default_config.done_hold_ms);
     }
     if (err == ESP_OK) {
@@ -310,6 +329,7 @@ static void load_saved_values(void)
     load_one_value(handle, "run_pwm");
     load_one_value(handle, "run_speed_counts_per_sec");
     load_one_value(handle, "speed_kp_milli");
+    load_one_value(handle, "speed_pwm_scale_milli");
     load_one_value(handle, "done_hold_ms");
     load_one_value(handle, "tx_detect_timeout_ms");
     load_one_value(handle, "tx_clear_timeout_ms");
@@ -344,6 +364,7 @@ void runtime_config_print_all(void)
     console_printf("CONFIG speed_kp %ld.%03ld\r\n",
                    (long)(runtime_config.speed_kp_milli / 1000),
                    (long)(runtime_config.speed_kp_milli % 1000));
+    console_printf("CONFIG speed_pwm_scale_milli %ld\r\n", (long)runtime_config.speed_pwm_scale_milli);
     console_printf("CONFIG done_hold_ms %ld\r\n", (long)runtime_config.done_hold_ms);
     console_printf("CONFIG tx_detect_timeout_ms %ld\r\n", (long)runtime_config.tx_detect_timeout_ms);
     console_printf("CONFIG tx_clear_timeout_ms %ld\r\n", (long)runtime_config.tx_clear_timeout_ms);
@@ -365,6 +386,11 @@ int runtime_config_run_speed_counts_per_sec(void)
 int runtime_config_speed_kp_milli(void)
 {
     return runtime_config.speed_kp_milli;
+}
+
+int runtime_config_speed_pwm_scale_milli(void)
+{
+    return runtime_config.speed_pwm_scale_milli;
 }
 
 bool runtime_config_set_speed_kp_milli(int32_t value)
