@@ -43,12 +43,14 @@ void app_main(void)
     configure_runtime_config();
     configure_pwm();
     configure_sensors();
+    configure_encoders();
     configure_conveyor_job();
 
     xTaskCreate(conveyor_job_task, "conveyor_job", CONVEYOR_JOB_TASK_STACK_SIZE, NULL, CONVEYOR_JOB_TASK_PRIORITY, NULL);
     xTaskCreate(microrl_task, "microrl", MICRORL_TASK_STACK_SIZE, NULL, 5, NULL);
     xTaskCreate(motor_controller_task, "motor_ctrl_M0", MOTOR_TASK_STACK_SIZE, &motors[0], 5, NULL);
     xTaskCreate(sensor_reader_task, "sensor_reader", SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
+    xTaskCreate(encoder_reader_task, "encoder_M0", ENCODER_TASK_STACK_SIZE, &motors[0], 5, NULL);
 
 #if CONVEYOR_MQTT_ENABLED
     configure_mqtt();

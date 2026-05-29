@@ -9,17 +9,17 @@ stateDiagram
     sensors: S0/S1 BGS sensors
     motors: MD30C + motor
 
-    mqtt --> statemachine : JSON top-level commands
-    statemachine --> mqtt : tray presence + job feedback
-    microrl --> statemachine : jobtx/jobrx/estop/clearerror
-    microrl --> statemachine : gettray status query
-    microrl --> motor_controller : debug PWM commands through motor state
-    statemachine --> motor_controller : move/stop requests through motor state
-    motor_controller --> motors : GPIO direction + LEDC PWM
-    sensor_controller --> statemachine : active-low sensor state
-    sensors --> sensor_controller : GPIO input
+    mqtt --> statemachine
+    statemachine --> mqtt
+    microrl --> statemachine
+    microrl --> statemachine
+    microrl --> motor_controller
+    statemachine --> motor_controller
+    motor_controller --> motors
+    sensor_controller --> statemachine
+    sensors --> sensor_controller
     encoder_filter: encoder_filter
-    encoders --> encoder_filter : raw encoder count
-    encoder_filter --> PID_controller : filtered encoder count
-    PID_controller --> motor_controller : future closed-loop motor request
-    motor_controller --> PID_controller : future current motor state
+    encoders --> encoder_filter
+    encoder_filter --> PID_controller
+    PID_controller --> motor_controller
+    motor_controller --> PID_controller

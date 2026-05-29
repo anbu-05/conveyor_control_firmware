@@ -9,6 +9,8 @@ high-level control.
 - Target: ESP32-S3
 - Cytron MD30C `P` pin: GPIO7
 - Cytron MD30C `D` pin: GPIO6
+- Encoder `M0` channel A: GPIO15
+- Encoder `M0` channel B: GPIO16
 - Sensor `S0`: GPIO4
 - Sensor `S1`: GPIO5
 - ESP32 ground and MD30C ground must be connected together.
@@ -148,6 +150,20 @@ EVENT SENSOR S1 1 0
 EVENT SENSOR S1 0 1
 ```
 
+Encoder event examples:
+
+```text
+EVENT ENCODER M0 120
+EVENT ENCODER M0 124
+EVENT ENCODER M0 116
+```
+
+Encoder diagnostic example:
+
+```text
+ENCODER M0 120 1 0
+```
+
 Job event examples:
 
 ```text
@@ -198,11 +214,14 @@ idf.py flash monitor
 - `main/tasks/motor_task.c`: motor PWM/direction setup and output task.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON command parsing, MQTT status task, and feedback publishing.
 - `main/tasks/sensor_task.c`: sensor GPIO setup and polling task.
+- `main/tasks/encoder_task.c`: encoder PCNT setup and count polling task.
 - `main/conveyor/conveyor_job.c`: central TX/RX conveyor state machine and job queue setup.
 
 ## Current Limits
 
 - Only one motor, `M0`, is configured.
 - Two binary sensors, `S0` and `S1`, are configured.
-- Encoder PCNT reading is not implemented yet.
-- The motor struct already has fields for future position control work.
+- Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
+- Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
+- A 1000 ns PCNT glitch filter rejects very short encoder input noise.
+- Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.

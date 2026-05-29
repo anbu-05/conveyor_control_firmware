@@ -13,6 +13,7 @@ flowchart TD
         MqttTaskC["main/tasks/mqtt_task.c"]
         MotorTaskC["main/tasks/motor_task.c"]
         SensorTaskC["main/tasks/sensor_task.c"]
+        EncoderTaskC["main/tasks/encoder_task.c"]
         MainCMake["main/CMakeLists.txt"]
         MainManifest["main/idf_component.yml"]
     end
@@ -25,6 +26,7 @@ flowchart TD
     MainCMake --> MqttTaskC
     MainCMake --> MotorTaskC
     MainCMake --> SensorTaskC
+    MainCMake --> EncoderTaskC
     MainManifest --> MqttDependency["espressif/mqtt"]
 
     MainC --> AppStateH
@@ -52,6 +54,7 @@ flowchart TD
     MqttTaskC --> MqttTaskH
     MotorTaskC --> AppStateH
     SensorTaskC --> AppStateH
+    EncoderTaskC --> AppStateH
 
     MainC --> AppMain["app_main()"]
     AppMain --> MutexCreate["create motor_mutex and console_mutex"]
@@ -59,11 +62,13 @@ flowchart TD
     AppMain --> ConfigureRuntimeConfig["configure_runtime_config()"]
     AppMain --> ConfigurePWM["configure_pwm()"]
     AppMain --> ConfigureSensors["configure_sensors()"]
+    AppMain --> ConfigureEncoders["configure_encoders()"]
     AppMain --> ConfigureJob["configure_conveyor_job()"]
     AppMain --> CreateJobTask["xTaskCreate(conveyor_job_task)"]
     AppMain --> CreateMicrorlTask["xTaskCreate(microrl_task)"]
     AppMain --> CreateMotorTask["xTaskCreate(motor_controller_task, &motors[0])"]
     AppMain --> CreateSensorTask["xTaskCreate(sensor_reader_task)"]
+    AppMain --> CreateEncoderTask["xTaskCreate(encoder_reader_task, &motors[0])"]
     AppMain --> ConfigureMQTT["configure_mqtt()"]
     AppMain --> CreateMqttStatusTask["xTaskCreate(mqtt_status_task)"]
     AppMain --> ReadyLine["console_print(READY conveyor)"]
@@ -75,13 +80,14 @@ flowchart TD
     AppStateC --> MotorMutex["motor_mutex"]
     AppStateC --> ConsoleMutex["console_mutex"]
     AppStateC --> SensorWatchFlag["sensor_watch_enabled"]
+    AppStateC --> EncoderWatchFlag["encoder_watch_enabled"]
     AppStateC --> ConsolePrint["console_print()"]
     AppStateC --> MoveMainMotor["move_main_motor()"]
     AppStateC --> StopAllMotors["stop_all_motors()"]
 
     CommandTaskC --> MicrorlTask["microrl_task()"]
     MicrorlTask --> ExecuteCommand["execute_command()"]
-    ExecuteCommand --> LowLevelSerial["setmotor/stopmotor/stop/watchsensors"]
+    ExecuteCommand --> LowLevelSerial["setmotor/stopmotor/stop/watchsensors/watchencoder"]
     ExecuteCommand --> JobSerial["jobtx/jobrx/estop/clearerror"]
     ExecuteCommand --> TraySerial["gettray"]
     ExecuteCommand --> ConfigSerial["getconfig/setconfig/resetconfig"]
@@ -118,6 +124,11 @@ flowchart TD
     SensorTaskC --> SensorReaderTask["sensor_reader_task()"]
     SensorReaderTask --> SensorsArray
     SensorReaderTask --> SensorEvents["EVENT SENSOR lines"]
+
+    EncoderTaskC --> ConfigureEncoders
+    EncoderTaskC --> EncoderReaderTask["encoder_reader_task()"]
+    EncoderReaderTask --> MotorsArray
+    EncoderReaderTask --> EncoderEvents["EVENT ENCODER lines"]
 
     MotorTaskC --> ConfigurePWM
     MotorTaskC --> MotorControllerTask["motor_controller_task()"]

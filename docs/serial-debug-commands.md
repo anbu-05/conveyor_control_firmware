@@ -169,6 +169,93 @@ Success output:
 OK WATCHSENSORS OFF
 ```
 
+## `watchencoder M0 on`
+
+Enables raw encoder count output for `M0`.
+
+Input:
+
+```text
+watchencoder M0 on
+```
+
+Effect:
+
+- Prints `EVENT ENCODER M0 <count>` lines about every 100 ms.
+- The count comes from PCNT using GPIO15 as channel A and GPIO16 as channel B.
+- The same raw count is stored in `M0.position`.
+
+Success output:
+
+```text
+OK WATCHENCODER M0 ON
+```
+
+Example event output:
+
+```text
+EVENT ENCODER M0 120
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
+## `watchencoder M0 off`
+
+Disables raw encoder count output for `M0`.
+
+Input:
+
+```text
+watchencoder M0 off
+```
+
+Success output:
+
+```text
+OK WATCHENCODER M0 OFF
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
+## `getencoder M0`
+
+Prints one raw encoder diagnostic line.
+
+Input:
+
+```text
+getencoder M0
+```
+
+Output:
+
+```text
+ENCODER M0 120 1 0
+```
+
+Field order:
+
+```text
+ENCODER <motor> <count> <gpio15_a> <gpio16_b>
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
 ## `gettray`
 
 Prints the derived tray-presence status.
@@ -463,6 +550,12 @@ EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
 EVENT JOB C0 TX_WAIT_FOR_TX1_CLEAR
 EVENT JOB C0 TX_DONE
 EVENT JOB C0 IDLE
+```
+
+Encoder events:
+
+```text
+EVENT ENCODER M0 120
 ```
 
 Tray status:

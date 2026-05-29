@@ -7,6 +7,8 @@
 SemaphoreHandle_t motor_mutex;
 SemaphoreHandle_t console_mutex;
 volatile bool sensor_watch_enabled = false;
+volatile bool encoder_watch_enabled = false;
+motor_t *encoder_watch_motor = NULL;
 
 /* Keep all motor state and pin config together so more motors can be added later. */
 motor_t motors[MOTOR_COUNT] = {
@@ -19,7 +21,10 @@ motor_t motors[MOTOR_COUNT] = {
         .pos_control = false,
         .pwm_gpio = GPIO_NUM_7,
         .dir_gpio = GPIO_NUM_6,
+        .encoder_a_gpio = GPIO_NUM_15,
+        .encoder_b_gpio = GPIO_NUM_16,
         .ledc_channel = LEDC_CHANNEL_0,
+        .pcnt_unit = NULL,
     },
 };
 

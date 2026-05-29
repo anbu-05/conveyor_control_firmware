@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "conveyor_job.h"
+#include "esp_err.h"
 #include "microrl.h"
 #include "runtime_config.h"
 
@@ -249,6 +250,63 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "watchencoder") == 0) {
+        if (argc != 3) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[2], "on") == 0) {
+            encoder_watch_motor = motor;
+            encoder_watch_enabled = true;
+            console_printf("OK WATCHENCODER %s ON\r\n", motor->name);
+            return 0;
+        }
+
+        if (strcmp(argv[2], "off") == 0) {
+            if (encoder_watch_motor == motor) {
+                encoder_watch_enabled = false;
+                encoder_watch_motor = NULL;
+            }
+
+            console_printf("OK WATCHENCODER %s OFF\r\n", motor->name);
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getencoder") == 0) {
+        int count = 0;
+        int a = 0;
+        int b = 0;
+
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &count));
+        a = gpio_get_level(motor->encoder_a_gpio);
+        b = gpio_get_level(motor->encoder_b_gpio);
+
+        console_printf("ENCODER %s %d %d %d\r\n", motor->name, count, a, b);
         return 0;
     }
 
