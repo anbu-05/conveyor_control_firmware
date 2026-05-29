@@ -46,8 +46,11 @@ void motor_pid_task(void *arg)
     int target_abs = 0;
     int speed_along_target = 0;
     int error = 0;
-    int acceleration_step = 0;
-    int planned_speed = 0;
+    int last_error = 0;
+    int d_error = 0;
+    int p_step = 0;
+    int d_step = 0;
+    int target_pwm = 0;
     int pwm = 0;
     int direction = 0;
     int current_direction = 0;
@@ -79,7 +82,6 @@ void motor_pid_task(void *arg)
         motor->position = count;
         motor->current_speed = speed;
         target_speed = motor->target_speed;
-        planned_speed = motor->planned_speed;
         pwm = motor->pwm;
         current_direction = motor->direction;
         direction = current_direction;
@@ -88,19 +90,9 @@ void motor_pid_task(void *arg)
 
         if (speed_control) {
             if (target_speed == 0) {
+                last_error = 0;
                 direction = current_direction;
-                if (planned_speed > 0) {
-                    acceleration_step = -((planned_speed * runtime_config_speed_kp_milli()) / 1000);
-                    acceleration_step = clamp_int(acceleration_step,
-                                                  -CONVEYOR_SPEED_ACCEL_STEP_COUNTS,
-                                                  CONVEYOR_SPEED_ACCEL_STEP_COUNTS);
-                    if (acceleration_step == 0) {
-                        acceleration_step = -1;
-                    }
-                    planned_speed += acceleration_step;
-                } else {
-                    planned_speed = 0;
-                }
+                target_pwm = 0;
             } else {
                 if (target_speed < 0) {
                     target_abs = abs_int(target_speed);
@@ -113,34 +105,40 @@ void motor_pid_task(void *arg)
                 }
 
                 error = target_abs - speed_along_target;
-                acceleration_step = (error * runtime_config_speed_kp_milli()) / 1000;
-                acceleration_step = clamp_int(acceleration_step,
-                                              -CONVEYOR_SPEED_ACCEL_STEP_COUNTS,
-                                              CONVEYOR_SPEED_ACCEL_STEP_COUNTS);
-                planned_speed += acceleration_step;
+                d_error = error - last_error;
+                last_error = error;
+                p_step = (error * runtime_config_speed_kp_milli()) / 1000;
+                d_step = (d_error * runtime_config_speed_kd_milli()) / 1000;
+                target_pwm = p_step + d_step;
+            }
 
-                if (planned_speed < 0) {
-                    planned_speed = 0;
+            target_pwm = clamp_int(target_pwm, 0, CONVEYOR_SPEED_PID_PWM_MAX);
+
+            if (pwm < target_pwm) {
+                pwm += CONVEYOR_PWM_SLEW_STEP;
+                if (pwm > target_pwm) {
+                    pwm = target_pwm;
                 }
-                if (planned_speed > target_abs) {
-                    planned_speed = target_abs;
+            } else if (pwm > target_pwm) {
+                pwm -= CONVEYOR_PWM_SLEW_STEP;
+                if (pwm < target_pwm) {
+                    pwm = target_pwm;
                 }
             }
 
-            if (planned_speed < 0) {
-                planned_speed = 0;
+            if (pwm < 0) {
+                pwm = 0;
             }
-
-            pwm = (int)(((int64_t)planned_speed * runtime_config_speed_pwm_scale_milli()) / 1000);
             if (pwm > CONVEYOR_SPEED_PID_PWM_MAX) {
                 pwm = CONVEYOR_SPEED_PID_PWM_MAX;
             }
 
             xSemaphoreTake(motor_mutex, portMAX_DELAY);
-            motor->planned_speed = planned_speed;
             motor->pwm = pwm;
             motor->direction = direction;
             xSemaphoreGive(motor_mutex);
+        } else {
+            last_error = 0;
         }
 
         ESP_ERROR_CHECK(gpio_set_level(motor->dir_gpio, direction));

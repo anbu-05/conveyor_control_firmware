@@ -115,7 +115,7 @@ Current editable keys:
 run_pwm
 run_speed_counts_per_sec
 speed_kp
-speed_pwm_scale_milli
+speed_kd
 done_hold_ms
 tx_detect_timeout_ms
 tx_clear_timeout_ms
@@ -125,7 +125,8 @@ mqtt_status_period_ms
 ```
 
 Use the serial debug commands `getconfig`, `setconfig`, and `resetconfig`.
-Use `setkp` for the decimal speed gain.
+Use `setkp` and `setkd` for decimal speed gain tuning. Use `resetk` to restore
+only the P/D speed gains to their defaults.
 
 ## Detailed Docs
 
@@ -227,11 +228,10 @@ idf.py flash monitor
 - Only one motor, `M0`, is configured.
 - Two binary sensors, `S0` and `S1`, are configured.
 - Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
-- P-only speed control is implemented in `motor_pid_task`.
+- P/D speed control is implemented in `motor_pid_task`.
 - Speed control direction follows the target speed sign.
-- P output changes `planned_speed`; `planned_speed` maps to PWM through `speed_pwm_scale_milli`.
-- Planned speed changes are capped by `CONVEYOR_SPEED_ACCEL_STEP_COUNTS` each motor PID tick.
+- P/D output calculates a target PWM, and `motor.pwm` slews toward it by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
 - Speed measurement uses a 5-sample moving average.
 - Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
-- Encoder filtering, zeroing, MQTT publishing, I/D control, and position control are not implemented yet.
+- Encoder filtering, zeroing, MQTT publishing, I control, and position control are not implemented yet.

@@ -19,8 +19,8 @@
 #define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
 #define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */
 #define CONVEYOR_SPEED_KP_MILLI 50                    /* Default speed P gain scaled by 1000; 50 means 0.050. */
-#define CONVEYOR_SPEED_PWM_SCALE_MILLI 100            /* Planned-speed to PWM scale; pwm = planned_speed * value / 1000. */
-#define CONVEYOR_SPEED_ACCEL_STEP_COUNTS 25           /* Max planned_speed change per 20 ms motor PID tick. */
+#define CONVEYOR_SPEED_KD_MILLI 50                    /* Default speed D gain scaled by 1000; 50 means 0.050, 0 disables D. */
+#define CONVEYOR_PWM_SLEW_STEP 1                      /* Max PWM change per 20 ms motor PID tick. */
 #define CONVEYOR_SPEED_PID_PWM_MAX 128                /* Highest PWM that speed control may command. */
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* MD30C direction level used for normal conveyor travel. */
 

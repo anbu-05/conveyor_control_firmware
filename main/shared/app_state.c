@@ -22,7 +22,6 @@ motor_t motors[MOTOR_COUNT] = {
         .position = 0,
         .target_pos = 0,
         .target_speed = 0,
-        .planned_speed = 0,
         .current_speed = 0,
         .pos_control = false,
         .speed_control = false,
@@ -126,7 +125,6 @@ bool move_motor(const char *name, int direction, int pwm)
     motor->direction = direction;
     motor->pwm = pwm;
     motor->target_speed = 0;
-    motor->planned_speed = 0;
     motor->speed_control = false;
     xSemaphoreGive(motor_mutex);
     return true;
@@ -147,14 +145,8 @@ bool start_motor(const char *name)
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     if (CONVEYOR_MOTOR_FORWARD_DIRECTION == 0) {
-        if (motor->target_speed > 0) {
-            motor->planned_speed = 0;
-        }
         motor->target_speed = -speed;
     } else {
-        if (motor->target_speed < 0) {
-            motor->planned_speed = 0;
-        }
         motor->target_speed = speed;
     }
     motor->speed_control = true;
@@ -183,7 +175,6 @@ void stop_all_motors(void)
     for (int i = 0; i < MOTOR_COUNT; i++) {
         motors[i].pwm = 0;
         motors[i].target_speed = 0;
-        motors[i].planned_speed = 0;
         motors[i].speed_control = false;
     }
     xSemaphoreGive(motor_mutex);

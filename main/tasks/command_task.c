@@ -90,7 +90,7 @@ static bool parse_signed_int(const char *text, int32_t *value)
     return true;
 }
 
-static bool parse_kp_milli(const char *text, int32_t *value)
+static bool parse_gain_milli(const char *text, const char *config_name, int32_t *value)
 {
     int32_t whole = 0;
     int32_t fraction = 0;
@@ -128,7 +128,7 @@ static bool parse_kp_milli(const char *text, int32_t *value)
     }
 
     *value = whole * 1000 + fraction;
-    return runtime_config_value_is_valid("speed_kp_milli", *value);
+    return runtime_config_value_is_valid(config_name, *value);
 }
 
 static void print_one_config(const char *name)
@@ -138,6 +138,12 @@ static void print_one_config(const char *name)
     if (strcmp(name, "speed_kp") == 0) {
         value = runtime_config_speed_kp_milli();
         console_printf("CONFIG speed_kp %ld.%03ld\r\n", (long)(value / 1000), (long)(value % 1000));
+        return;
+    }
+
+    if (strcmp(name, "speed_kd") == 0) {
+        value = runtime_config_speed_kd_milli();
+        console_printf("CONFIG speed_kd %ld.%03ld\r\n", (long)(value / 1000), (long)(value % 1000));
         return;
     }
 
@@ -160,6 +166,7 @@ static int execute_command(int argc, const char *const *argv)
     long direction = 0;
     int32_t speed = 0;
     int32_t kp_milli = 0;
+    int32_t kd_milli = 0;
     motor_t *motor = NULL;
 
     if (strcmp(argv[0], "setmotor") == 0) {
@@ -236,7 +243,7 @@ static int execute_command(int argc, const char *const *argv)
 
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
         if ((motor->target_speed < 0 && speed > 0) || (motor->target_speed > 0 && speed < 0)) {
-            motor->planned_speed = 0;
+            motor->pwm = 0;
         }
         motor->target_speed = speed;
         motor->speed_control = true;
@@ -252,7 +259,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        if (!parse_kp_milli(argv[1], &kp_milli)) {
+        if (!parse_gain_milli(argv[1], "speed_kp_milli", &kp_milli)) {
             console_print("ERR BAD_VALUE\r\n");
             return 0;
         }
@@ -263,6 +270,41 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         console_printf("OK SETKP %ld.%03ld\r\n", (long)(kp_milli / 1000), (long)(kp_milli % 1000));
+        return 0;
+    }
+
+    if (strcmp(argv[0], "setkd") == 0) {
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!parse_gain_milli(argv[1], "speed_kd_milli", &kd_milli)) {
+            console_print("ERR BAD_VALUE\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_set_speed_kd_milli(kd_milli)) {
+            console_print("ERR CONFIG_SAVE\r\n");
+            return 0;
+        }
+
+        console_printf("OK SETKD %ld.%03ld\r\n", (long)(kd_milli / 1000), (long)(kd_milli % 1000));
+        return 0;
+    }
+
+    if (strcmp(argv[0], "resetk") == 0) {
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_reset_speed_gains()) {
+            console_print("ERR CONFIG_SAVE\r\n");
+            return 0;
+        }
+
+        console_print("OK RESETK\r\n");
         return 0;
     }
 
@@ -431,6 +473,45 @@ static int execute_command(int argc, const char *const *argv)
         b = gpio_get_level(motor->encoder_b_gpio);
 
         console_printf("ENCODER %s %d %d %d\r\n", motor->name, count, a, b);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getmotor") == 0) {
+        int motor_pwm = 0;
+        int motor_direction = 0;
+        int motor_position = 0;
+        int motor_target_speed = 0;
+        int motor_current_speed = 0;
+        int motor_speed_control = 0;
+
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        motor_pwm = motor->pwm;
+        motor_direction = motor->direction;
+        motor_position = motor->position;
+        motor_target_speed = motor->target_speed;
+        motor_current_speed = motor->current_speed;
+        motor_speed_control = motor->speed_control ? 1 : 0;
+        xSemaphoreGive(motor_mutex);
+
+        console_printf("MOTOR %s %d %d %d %d %d %d\r\n",
+                       motor->name,
+                       motor_pwm,
+                       motor_direction,
+                       motor_position,
+                       motor_target_speed,
+                       motor_current_speed,
+                       motor_speed_control);
         return 0;
     }
 

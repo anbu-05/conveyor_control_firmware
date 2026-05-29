@@ -1,61 +1,25 @@
-flowchart TD
-    subgraph Inputs["Command Inputs"]
-        Serial["USB serial / microrl"]
-        Mqtt["MQTT command topics"]
-    end
+stateDiagram
+    mqtt: mqtt_task
+    microrl: microrl_task
+    sensor_controller: sensor_reader_task
+    statemachine: conveyor_job_task
+    motor_controller: motor_controller_task
+    PID_controller: future PID controller
+    encoders: future encoders
+    sensors: S0/S1 BGS sensors
+    motors: MD30C + motor
 
-    subgraph Control["Conveyor Control"]
-        Commands["command_task"]
-        MqttTask["mqtt_task"]
-        Job["conveyor_job_task"]
-        Config["runtime_config"]
-    end
-
-    subgraph Motor["Motor Control"]
-        MotorState["M0 shared motor state"]
-        MotorPid["motor_pid_task"]
-        EncoderSetup["PCNT encoder setup"]
-    end
-
-    subgraph Sensors["Tray Sensors"]
-        SensorTask["sensor_reader_task"]
-        SensorState["S0/S1 shared sensor state"]
-    end
-
-    subgraph Hardware["Hardware"]
-        Encoder["M0 encoder GPIO15/GPIO16"]
-        Driver["MD30C driver"]
-        MotorHw["DC motor"]
-        SensorHw["S0/S1 GPIO4/GPIO5"]
-    end
-
-    Serial --> Commands
-    Mqtt --> MqttTask
-
-    Commands --> Job
-    MqttTask --> Job
-    Commands --> Config
-    Commands --> MotorState
-
-    Job --> MotorState
-    Job --> MqttTask
-    Job --> Config
-    SensorState --> Job
-
-    Config --> MotorState
-    Config --> Job
-    Config --> MqttTask
-
-    MotorState --> MotorPid
-    EncoderSetup --> MotorPid
-    Encoder --> MotorPid
-    MotorPid --> Driver
-    Driver --> MotorHw
-
-    SensorHw --> SensorTask
-    SensorTask --> SensorState
-    SensorTask --> Commands
-
-    MotorPid --> Commands
-    Job --> Commands
-    MqttTask --> Commands
+    mqtt --> statemachine
+    statemachine --> mqtt
+    microrl --> statemachine
+    microrl --> statemachine
+    microrl --> motor_controller
+    statemachine --> motor_controller
+    motor_controller --> motors
+    sensor_controller --> statemachine
+    sensors --> sensor_controller
+    encoder_reader: encoder_reader
+    encoders --> encoder_reader
+    encoder_reader --> PID_controller
+    PID_controller --> motor_controller
+    motor_controller --> PID_controller

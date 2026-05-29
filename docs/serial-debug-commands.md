@@ -160,6 +160,65 @@ ERR BAD_VALUE
 ERR CONFIG_SAVE
 ```
 
+## `setkd 0.005`
+
+Sets and saves the D gain for speed control.
+
+Input:
+
+```text
+setkd 0.005
+```
+
+Effect:
+
+- Saves `speed_kd` to NVS.
+- The value is stored internally as thousandths.
+- Set `speed_kd` to `0.000` to disable D control.
+
+Success output:
+
+```text
+OK SETKD 0.005
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR BAD_VALUE
+ERR CONFIG_SAVE
+```
+
+## `resetk`
+
+Restores only the speed control gains to defaults from `main/config/config.h`.
+
+Input:
+
+```text
+resetk
+```
+
+Effect:
+
+- Saves default `speed_kp` and `speed_kd` to NVS.
+- Does not change other runtime config values.
+- Takes effect immediately, like `setkp` and `setkd`.
+
+Success output:
+
+```text
+OK RESETK
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR CONFIG_SAVE
+```
+
 ## `stop`
 
 Safety/debug stop command.
@@ -250,7 +309,7 @@ Effect:
 
 - Prints `EVENT ENCODER M0 <count> <speed>` lines about every 100 ms.
 - The count comes from PCNT using GPIO15 as channel A and GPIO16 as channel B.
-- The speed is calculated by the PID controller task in encoder counts per second.
+- The speed is calculated by the motor PID task in encoder counts per second.
 - The same raw count is stored in `M0.position`.
 
 Success output:
@@ -324,6 +383,35 @@ ERR BAD_ARGS
 ERR UNKNOWN_MOTOR
 ```
 
+## `getmotor M0`
+
+Prints the current motor debug state.
+
+Input:
+
+```text
+getmotor M0
+```
+
+Output:
+
+```text
+MOTOR M0 12 1 1200 5000 4800 1
+```
+
+Field order:
+
+```text
+MOTOR <motor> <pwm> <direction> <position> <target_speed> <current_speed> <speed_control>
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
 ## `gettray`
 
 Prints the derived tray-presence status.
@@ -375,7 +463,7 @@ Output:
 CONFIG run_pwm 128
 CONFIG run_speed_counts_per_sec 100
 CONFIG speed_kp 0.500
-CONFIG speed_pwm_scale_milli 100
+CONFIG speed_kd 0.000
 CONFIG done_hold_ms 100
 CONFIG tx_detect_timeout_ms 5000
 CONFIG tx_clear_timeout_ms 5000
@@ -445,7 +533,7 @@ Editable keys:
 run_pwm                  0..255
 run_speed_counts_per_sec 0..100000
 speed_kp_milli           0..100000
-speed_pwm_scale_milli    0..100000
+speed_kd_milli           0..100000
 done_hold_ms             0..60000
 tx_detect_timeout_ms     1..600000
 tx_clear_timeout_ms      1..600000
@@ -454,8 +542,9 @@ rx_done_timeout_ms       1..600000
 mqtt_status_period_ms    100..60000
 ```
 
-Use `setkp <decimal>` for normal speed gain tuning. `speed_kp_milli` is the
-integer value saved internally.
+Use `setkp <decimal>` and `setkd <decimal>` for normal speed gain tuning.
+Use `resetk` to restore only those two gains to the defaults from `main/config/config.h`.
+`speed_kp_milli` and `speed_kd_milli` are the integer values saved internally.
 
 ## `resetconfig`
 
