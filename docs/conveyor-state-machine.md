@@ -444,13 +444,16 @@ The state machine does not write GPIO or LEDC hardware directly.
 It calls shared motor helpers:
 
 ```text
-move_main_motor_speed(CONVEYOR_MOTOR_FORWARD_DIRECTION, speed)
+start_main_motor()
 stop_all_motors()
 ```
 
-The `pid_controller_task` reads encoder PCNT and writes PWM/direction requests.
-The `motor_controller_task` only writes the actual direction GPIO and LEDC PWM
-hardware.
+`start_main_motor()` uses the fixed `CONVEYOR_MOTOR_FORWARD_DIRECTION` and the
+runtime `run_speed_counts_per_sec` value. The state machine only requests
+run/stop.
+
+The `motor_pid_task` reads encoder PCNT, calculates speed, updates the simple
+speed controller, and writes the actual direction GPIO and LEDC PWM hardware.
 
 ## Status Output
 

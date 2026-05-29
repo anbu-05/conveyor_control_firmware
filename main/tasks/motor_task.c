@@ -35,29 +35,3 @@ void configure_pwm(void)
         ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     }
 }
-
-/*
- * FreeRTOS task for one motor output loop.
- * It copies the latest PWM and direction from the motor struct, then writes
- * those values to GPIO and LEDC hardware.
- */
-void motor_controller_task(void *arg)
-{
-    motor_t *motor = (motor_t *)arg;
-    int pwm = 0;
-    int direction = 0;
-
-    /* This task is the only place that writes motor state to GPIO and PWM hardware. */
-    while (1) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        pwm = motor->pwm;
-        direction = motor->direction;
-        xSemaphoreGive(motor_mutex);
-
-        ESP_ERROR_CHECK(gpio_set_level(motor->dir_gpio, direction));
-        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel, pwm));
-        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel));
-
-        vTaskDelay(pdMS_TO_TICKS(MOTOR_CONTROLLER_DELAY_MS));
-    }
-}

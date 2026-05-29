@@ -14,11 +14,9 @@
 #define MOTOR_PWM_FREQ_HZ 20000
 #define MOTOR_PWM_RESOLUTION LEDC_TIMER_8_BIT
 #define MOTOR_PWM_MAX 255
-#define MOTOR_CONTROLLER_DELAY_MS 20
 #define MICRORL_TASK_STACK_SIZE 4096
-#define MOTOR_TASK_STACK_SIZE 3072
-#define PID_TASK_STACK_SIZE 4096
-#define PID_CONTROLLER_DELAY_MS 20
+#define MOTOR_PID_TASK_STACK_SIZE 4096
+#define MOTOR_PID_DELAY_MS 20
 #define SENSOR_COUNT 2
 #define SENSOR_TASK_STACK_SIZE 3072
 #define SENSOR_POLL_DELAY_MS 20
@@ -65,15 +63,14 @@ void console_print(const char *text);
 void console_printf(const char *format, ...);
 motor_t *find_motor(const char *name);
 void move_main_motor(int direction, int pwm);
-void move_main_motor_speed(int direction, int speed);
+void start_main_motor(void);
 void stop_all_motors(void);
 
 void configure_pwm(void);
 void configure_sensors(void);
 void configure_encoders(void);
 void microrl_task(void *arg);
-void motor_controller_task(void *arg);
-void pid_controller_task(void *arg);
+void motor_pid_task(void *arg);
 void sensor_reader_task(void *arg);
 
 #endif

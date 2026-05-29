@@ -165,7 +165,7 @@ static void start_tx(void)
     }
 
     current_status.error[0] = '\0';
-    move_main_motor_speed(CONVEYOR_MOTOR_FORWARD_DIRECTION, runtime_config_run_speed_counts_per_sec());
+    start_main_motor();
 
     if (tray_detected(tx1_sensor())) {
         set_state(CONVEYOR_STATE_TX_WAIT_FOR_TX1_CLEAR);
@@ -259,7 +259,7 @@ static void update_state(void)
     if (current_status.state == CONVEYOR_STATE_RX_WAIT_FOR_RX0) {
         sensor = rx0_sensor();
         if (tray_detected(sensor)) {
-            move_main_motor_speed(CONVEYOR_MOTOR_FORWARD_DIRECTION, runtime_config_run_speed_counts_per_sec());
+            start_main_motor();
             set_state(CONVEYOR_STATE_RX_WAIT_FOR_RX1);
         } else if (timeout_expired(runtime_config_rx_detect_timeout_ms())) {
             set_error("RX_DETECT_TIMEOUT");

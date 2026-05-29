@@ -1,0 +1,14 @@
+fix the messy code structure mermaid chart
+
+the code is very baren and hard to read through right now, add some comments in all the codes to make it easy to read through and understand
+
+download mosquito and test mqtt
+
+---
+
+in tx, in the case where the box is still in s0 instead of s1, the conveyor should move the box slowly till it's aligned with s1, which is the ideal case
+
+---
+
+go through this project. read through project.md for AI context and readme.md for human context. we need to add a thread that uses pcnt to 
+

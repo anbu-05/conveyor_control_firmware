@@ -4,7 +4,7 @@
 
 ESP-IDF starter project for controlling one motor through a Cytron MD30C.
 
-Implemented a strict serial command layer using a vendored local `microrl` component. The app has one motor, `M0`, controlled by a FreeRTOS motor controller task.
+Implemented a strict serial command layer using a vendored local `microrl` component. The app has one motor, `M0`, controlled by one combined FreeRTOS motor PID task.
 
 Added function-level comments in the main app source files and `components/microrl/microrl.c` so future readers can quickly understand each function's job.
 
@@ -16,15 +16,21 @@ Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task 
 
 Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
 
-Added a dedicated P-only speed controller task. `pid_controller_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, and writes PWM/direction requests for `motor_controller_task` to apply. The motor controller task remains a pure actuator loop.
+Added a combined motor PID task. `motor_pid_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, updates the speed controller when enabled, and writes direction GPIO plus LEDC PWM hardware directly.
 
 Speed control now uses an acceleration-style planned speed. P output changes `M0.planned_speed`, and `planned_speed` maps linearly to PWM through `speed_pwm_scale_milli`. Motor direction comes only from the sign of `target_speed`.
+
+Tuning update: `CONVEYOR_SPEED_ACCEL_STEP_COUNTS` caps how much `planned_speed` can change during each 20 ms motor PID tick. This prevents large speed commands like `setspeed M0 10000` from creating a huge first acceleration step, while preserving gentle deceleration toward zero.
+
+Conveyor jobs now only request fixed-direction run/stop. `start_main_motor()` uses `CONVEYOR_MOTOR_FORWARD_DIRECTION` and runtime `run_speed_counts_per_sec`; `stop_all_motors()` stops immediately and disables speed control.
 
 Added a central conveyor job state machine for high-level tray transfer jobs. MQTT and microrl can submit TX/RX/emergency/clear-error commands to the same queue, while the state machine owns the active job. DONE states auto-return to `IDLE` after a short report hold.
 
 Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/broker/topic config, `espressif/mqtt` dependency, WiFi/MQTT setup in its own module, JSON high-level command parsing, and feedback publishing. MQTT does not expose raw PWM commands.
 
 Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, `speed_pwm_scale_milli`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
+
+Config files now include inline comments for each compile-time parameter and runtime config getter/key meaning, so tuning values can be understood without chasing their use sites.
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
@@ -38,7 +44,7 @@ MQTT feedback now includes `state_elapsed_ms`, the elapsed milliseconds since th
 
 Current sensor interpretation is active-low: raw GPIO `0` means tray detected, and raw GPIO `1` means no tray.
 
-Cleaned up `docs/architecture.mmd` into a simple top-down flowchart: MQTT and microrl inputs at the top, `conveyor_job_task` centered, motor/encoder/sensor hardware tasks below it, future encoder filter/PID shown in a separate section, and no arrow descriptions.
+Cleaned up `docs/architecture.mmd` and `docs/code-structure.mmd` so they match the current combined motor PID design. The architecture diagram now shows command inputs, conveyor control, runtime config, motor PID, sensors, and hardware as grouped runtime blocks. The code-structure diagram now shows startup, shared state, runtime config, serial commands, conveyor jobs, motor/encoder, sensors, and MQTT as grouped code modules instead of a long function-level tangle.
 
 Serial output is now token-based for a Python wrapper:
 
@@ -93,8 +99,8 @@ CONFIG speed_pwm_scale_milli 100
 - `main/shared/app_state.h`: Shared structs, constants, globals, and task/setup prototypes.
 - `main/shared/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
 - `main/tasks/command_task.c`: Strict command parser and `microrl_task`.
-- `main/tasks/motor_task.c`: LEDC/direction GPIO setup and `motor_controller_task`.
-- `main/tasks/pid_task.c`: P-only speed controller task that reads PCNT and writes PWM/direction requests.
+- `main/tasks/motor_task.c`: LEDC/direction GPIO setup.
+- `main/tasks/pid_task.c`: Combined motor PID task that reads PCNT, calculates speed, controls PWM, and writes motor hardware.
 - `main/tasks/mqtt_task.h`: MQTT setup, status task, and publishing API.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON parsing, command queue submission, and status publishing.
 - `main/tasks/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
@@ -235,8 +241,7 @@ MQTT defaults:
 - `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
 - `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
 - `conveyor_job_task`: owns the TX/RX state machine and submits speed/stop requests to the motor state.
-- `pid_controller_task`: reads PCNT, calculates smoothed speed, updates planned speed through P-only acceleration control, and writes PWM/direction requests.
-- `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM only.
+- `motor_pid_task`: reads PCNT, calculates smoothed speed, updates planned speed through P-only acceleration control, and writes direction GPIO plus LEDC PWM hardware.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
 - `console_mutex`: keeps command responses and sensor event lines from interleaving.

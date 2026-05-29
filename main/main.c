@@ -48,8 +48,7 @@ void app_main(void)
 
     xTaskCreate(conveyor_job_task, "conveyor_job", CONVEYOR_JOB_TASK_STACK_SIZE, NULL, CONVEYOR_JOB_TASK_PRIORITY, NULL);
     xTaskCreate(microrl_task, "microrl", MICRORL_TASK_STACK_SIZE, NULL, 5, NULL);
-    xTaskCreate(motor_controller_task, "motor_ctrl_M0", MOTOR_TASK_STACK_SIZE, &motors[0], 5, NULL);
-    xTaskCreate(pid_controller_task, "pid_M0", PID_TASK_STACK_SIZE, &motors[0], 5, NULL);
+    xTaskCreate(motor_pid_task, "motor_pid_M0", MOTOR_PID_TASK_STACK_SIZE, &motors[0], 5, NULL);
     xTaskCreate(sensor_reader_task, "sensor_reader", SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
 
 #if CONVEYOR_MQTT_ENABLED

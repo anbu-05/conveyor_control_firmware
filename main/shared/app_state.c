@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "config.h"
+#include "runtime_config.h"
+
 SemaphoreHandle_t motor_mutex;
 SemaphoreHandle_t console_mutex;
 volatile bool sensor_watch_enabled = false;
@@ -122,14 +125,16 @@ void move_main_motor(int direction, int pwm)
     xSemaphoreGive(motor_mutex);
 }
 
-void move_main_motor_speed(int direction, int speed)
+void start_main_motor(void)
 {
+    int speed = runtime_config_run_speed_counts_per_sec();
+
     if (speed < 0) {
         speed = -speed;
     }
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    if (direction == 0) {
+    if (CONVEYOR_MOTOR_FORWARD_DIRECTION == 0) {
         if (motors[0].target_speed > 0) {
             motors[0].planned_speed = 0;
         }

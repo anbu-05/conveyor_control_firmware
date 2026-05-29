@@ -1,156 +1,123 @@
 flowchart TD
-    subgraph MainComponent["main component"]
-        MainC["main/main.c"]
-        AppStateH["main/shared/app_state.h"]
-        AppStateC["main/shared/app_state.c"]
-        ConfigH["main/config/config.h"]
-        RuntimeConfigH["main/config/runtime_config.h"]
-        RuntimeConfigC["main/config/runtime_config.c"]
-        CommandTaskC["main/tasks/command_task.c"]
-        ConveyorJobH["main/conveyor/conveyor_job.h"]
-        ConveyorJobC["main/conveyor/conveyor_job.c"]
-        MqttTaskH["main/tasks/mqtt_task.h"]
-        MqttTaskC["main/tasks/mqtt_task.c"]
-        MotorTaskC["main/tasks/motor_task.c"]
-        SensorTaskC["main/tasks/sensor_task.c"]
-        EncoderTaskC["main/tasks/encoder_task.c"]
-        PidTaskC["main/tasks/pid_task.c"]
-        MainCMake["main/CMakeLists.txt"]
-        MainManifest["main/idf_component.yml"]
+    subgraph Startup["Startup"]
+        Main["main/main.c"]
+        AppMain["app_main"]
+        ConsoleSetup["configure_console"]
+        TaskCreate["FreeRTOS task creation"]
     end
 
-    MainCMake --> MainC
-    MainCMake --> RuntimeConfigC
-    MainCMake --> AppStateC
-    MainCMake --> CommandTaskC
-    MainCMake --> ConveyorJobC
-    MainCMake --> MqttTaskC
-    MainCMake --> MotorTaskC
-    MainCMake --> SensorTaskC
-    MainCMake --> EncoderTaskC
-    MainCMake --> PidTaskC
-    MainManifest --> MqttDependency["espressif/mqtt"]
-
-    MainC --> AppStateH
-    MainC --> ConfigH
-    MainC --> RuntimeConfigH
-    MainC --> ConveyorJobH
-    MainC --> MqttTaskH
-
-    AppStateC --> AppStateH
-    RuntimeConfigC --> ConfigH
-    RuntimeConfigC --> RuntimeConfigH
-    RuntimeConfigC --> AppStateH
-    RuntimeConfigC --> NvsInit["nvs_flash_init()"]
-    CommandTaskC --> AppStateH
-    CommandTaskC --> ConveyorJobH
-    CommandTaskC --> RuntimeConfigH
-    ConveyorJobC --> AppStateH
-    ConveyorJobC --> ConfigH
-    ConveyorJobC --> ConveyorJobH
-    ConveyorJobC --> MqttTaskH
-    ConveyorJobC --> RuntimeConfigH
-    MqttTaskC --> ConfigH
-    MqttTaskC --> RuntimeConfigH
-    MqttTaskC --> ConveyorJobH
-    MqttTaskC --> MqttTaskH
-    MotorTaskC --> AppStateH
-    SensorTaskC --> AppStateH
-    EncoderTaskC --> AppStateH
-    PidTaskC --> AppStateH
-    PidTaskC --> RuntimeConfigH
-
-    MainC --> AppMain["app_main()"]
-    AppMain --> MutexCreate["create motor_mutex and console_mutex"]
-    AppMain --> ConfigureConsole["configure_console()"]
-    AppMain --> ConfigureRuntimeConfig["configure_runtime_config()"]
-    AppMain --> ConfigurePWM["configure_pwm()"]
-    AppMain --> ConfigureSensors["configure_sensors()"]
-    AppMain --> ConfigureEncoders["configure_encoders()"]
-    AppMain --> ConfigureJob["configure_conveyor_job()"]
-    AppMain --> CreateJobTask["xTaskCreate(conveyor_job_task)"]
-    AppMain --> CreateMicrorlTask["xTaskCreate(microrl_task)"]
-    AppMain --> CreateMotorTask["xTaskCreate(motor_controller_task, &motors[0])"]
-    AppMain --> CreatePidTask["xTaskCreate(pid_controller_task, &motors[0])"]
-    AppMain --> CreateSensorTask["xTaskCreate(sensor_reader_task)"]
-    AppMain --> ConfigureMQTT["configure_mqtt()"]
-    AppMain --> CreateMqttStatusTask["xTaskCreate(mqtt_status_task)"]
-    AppMain --> ReadyLine["console_print(READY conveyor)"]
-
-    AppStateH --> MotorStruct["motor_t struct"]
-    AppStateH --> SensorStruct["sensor_t struct"]
-    AppStateC --> MotorsArray["motors[MOTOR_COUNT]"]
-    AppStateC --> SensorsArray["sensors[SENSOR_COUNT]"]
-    AppStateC --> MotorMutex["motor_mutex"]
-    AppStateC --> ConsoleMutex["console_mutex"]
-    AppStateC --> SensorWatchFlag["sensor_watch_enabled"]
-    AppStateC --> EncoderWatchFlag["encoder_watch_enabled"]
-    AppStateC --> ConsolePrint["console_print()"]
-    AppStateC --> MoveMainMotor["move_main_motor()"]
-    AppStateC --> MoveMainMotorSpeed["move_main_motor_speed()"]
-    AppStateC --> StopAllMotors["stop_all_motors()"]
-
-    CommandTaskC --> MicrorlTask["microrl_task()"]
-    MicrorlTask --> ExecuteCommand["execute_command()"]
-    ExecuteCommand --> LowLevelSerial["setmotor/setspeed/setkp/stopmotor/stop/watchsensors/watchencoder"]
-    ExecuteCommand --> JobSerial["jobtx/jobrx/estop/clearerror"]
-    ExecuteCommand --> TraySerial["gettray"]
-    ExecuteCommand --> ConfigSerial["getconfig/setconfig/resetconfig"]
-    LowLevelSerial --> MotorsArray
-    JobSerial --> SendJobCommand["conveyor_job_send_command()"]
-    TraySerial --> ConveyorJobC
-    ConfigSerial --> RuntimeConfigC
-
-    ConveyorJobC --> ConfigureJob
-    ConfigureJob --> JobQueue["conveyor_cmd_queue"]
-    ConveyorJobC --> ConveyorJobTask["conveyor_job_task()"]
-    ConveyorJobTask --> JobQueue
-    ConveyorJobTask --> JobState["TX/RX/ERROR/ESTOP state machine"]
-    JobState --> SensorsArray
-    JobState --> TrayStatus["derived has_tray status"]
-    JobState --> MoveMainMotorSpeed
-    JobState --> StopAllMotors
-    JobState --> RuntimeConfigC
-    JobState --> JobEvents["EVENT JOB lines and MQTT status"]
-
-    MqttTaskC --> ConfigureMQTT
-    ConfigureMQTT --> WifiInit["WiFi station init"]
-    ConfigureMQTT --> MqttInit["MQTT client init"]
-    MqttInit --> MqttSubscribe["subscribe conveyor/C0 topics"]
-    MqttTaskC --> MqttEvent["mqtt_event_handler()"]
-    MqttEvent --> JsonCommands["JSON high-level commands"]
-    JsonCommands --> SendJobCommand
-    MqttTaskC --> MqttStatusTask["mqtt_status_task()"]
-    MqttStatusTask --> RuntimeConfigC
-    MqttStatusTask --> MqttFeedback["mqtt_publish_job_status()"]
-    MqttStatusTask --> TrayTopic["publish conveyor/C0/tray on has_tray change"]
-
-    SensorTaskC --> ConfigureSensors
-    SensorTaskC --> SensorReaderTask["sensor_reader_task()"]
-    SensorReaderTask --> SensorsArray
-    SensorReaderTask --> SensorEvents["EVENT SENSOR lines"]
-
-    EncoderTaskC --> ConfigureEncoders
-
-    PidTaskC --> PidTask["pid_controller_task()"]
-    PidTask --> MotorsArray
-    PidTask --> EncoderCount["pcnt_unit_get_count()"]
-    PidTask --> EncoderEvents["EVENT ENCODER lines"]
-    PidTask --> SpeedControl["P speed control"]
-
-    MotorTaskC --> ConfigurePWM
-    MotorTaskC --> MotorControllerTask["motor_controller_task()"]
-    MotorControllerTask --> MotorsArray
-    MotorControllerTask --> GpioOutput["gpio_set_level()"]
-    MotorControllerTask --> LedcDuty["ledc_set_duty()"]
-    MotorControllerTask --> LedcUpdate["ledc_update_duty()"]
-
-    subgraph MicrorlComponent["components/microrl"]
-        MicrorlHeader["microrl.h"]
-        MicrorlInsert["microrl_insert_char()"]
-        MicrorlRunLine["microrl_run_line()"]
+    subgraph Shared["Shared State"]
+        AppStateH["shared/app_state.h"]
+        AppStateC["shared/app_state.c"]
+        Motors["motors[]"]
+        Sensors["sensors[]"]
+        Mutexes["motor_mutex / console_mutex"]
+        MotorHelpers["move_main_motor / start_main_motor / stop_all_motors"]
     end
 
-    MicrorlTask --> MicrorlInsert
-    MicrorlInsert --> MicrorlRunLine
-    MicrorlRunLine --> ExecuteCommand
+    subgraph Config["Runtime Config"]
+        ConfigH["config/config.h"]
+        RuntimeH["config/runtime_config.h"]
+        RuntimeC["config/runtime_config.c"]
+        Nvs["NVS storage"]
+    end
+
+    subgraph Commands["Serial Commands"]
+        CommandTask["tasks/command_task.c"]
+        MicrorlTask["microrl_task"]
+        CommandHandlers["setmotor / setspeed / jobtx / jobrx / config commands"]
+        Microrl["components/microrl"]
+    end
+
+    subgraph Jobs["Conveyor Jobs"]
+        JobH["conveyor/conveyor_job.h"]
+        JobC["conveyor/conveyor_job.c"]
+        JobQueue["conveyor_cmd_queue"]
+        JobTask["conveyor_job_task"]
+        StateMachine["TX/RX/ERROR/ESTOP state machine"]
+    end
+
+    subgraph MotorControl["Motor And Encoder"]
+        MotorTask["tasks/motor_task.c"]
+        EncoderTask["tasks/encoder_task.c"]
+        PidTask["tasks/pid_task.c"]
+        PwmSetup["configure_pwm"]
+        EncoderSetup["configure_encoders"]
+        MotorPidTask["motor_pid_task"]
+    end
+
+    subgraph SensorsArea["Sensors"]
+        SensorTaskC["tasks/sensor_task.c"]
+        SensorSetup["configure_sensors"]
+        SensorReader["sensor_reader_task"]
+    end
+
+    subgraph Mqtt["MQTT"]
+        MqttH["tasks/mqtt_task.h"]
+        MqttC["tasks/mqtt_task.c"]
+        MqttSetup["configure_mqtt"]
+        MqttEvents["mqtt_event_handler"]
+        MqttStatus["mqtt_status_task"]
+    end
+
+    Main --> AppMain
+    AppMain --> ConsoleSetup
+    AppMain --> RuntimeC
+    AppMain --> PwmSetup
+    AppMain --> SensorSetup
+    AppMain --> EncoderSetup
+    AppMain --> JobQueue
+    AppMain --> TaskCreate
+
+    TaskCreate --> MicrorlTask
+    TaskCreate --> JobTask
+    TaskCreate --> MotorPidTask
+    TaskCreate --> SensorReader
+    TaskCreate --> MqttStatus
+
+    AppStateH --> Motors
+    AppStateH --> Sensors
+    AppStateC --> Motors
+    AppStateC --> Sensors
+    AppStateC --> Mutexes
+    AppStateC --> MotorHelpers
+
+    ConfigH --> RuntimeC
+    RuntimeH --> RuntimeC
+    RuntimeC --> Nvs
+    RuntimeC --> CommandHandlers
+    RuntimeC --> StateMachine
+    RuntimeC --> MotorPidTask
+    RuntimeC --> MqttStatus
+
+    CommandTask --> MicrorlTask
+    MicrorlTask --> Microrl
+    MicrorlTask --> CommandHandlers
+    CommandHandlers --> Motors
+    CommandHandlers --> JobQueue
+    CommandHandlers --> RuntimeC
+
+    JobC --> JobTask
+    JobH --> JobC
+    JobTask --> JobQueue
+    JobTask --> StateMachine
+    StateMachine --> Sensors
+    StateMachine --> MotorHelpers
+    StateMachine --> MqttC
+
+    MotorTask --> PwmSetup
+    EncoderTask --> EncoderSetup
+    PidTask --> MotorPidTask
+    MotorPidTask --> Motors
+    MotorPidTask --> RuntimeC
+
+    SensorTaskC --> SensorSetup
+    SensorTaskC --> SensorReader
+    SensorReader --> Sensors
+
+    MqttC --> MqttSetup
+    MqttC --> MqttEvents
+    MqttC --> MqttStatus
+    MqttEvents --> JobQueue
+    MqttStatus --> JobC
+    MqttH --> MqttC

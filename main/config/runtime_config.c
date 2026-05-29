@@ -8,23 +8,27 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
-#define RUNTIME_CONFIG_NAMESPACE "conveyor_cfg"
+#define RUNTIME_CONFIG_NAMESPACE "conveyor_cfg" /* NVS namespace for saved runtime config values. */
 
 typedef struct {
-    int32_t run_pwm;
-    int32_t run_speed_counts_per_sec;
-    int32_t speed_kp_milli;
-    int32_t speed_pwm_scale_milli;
-    int32_t done_hold_ms;
-    int32_t tx_detect_timeout_ms;
-    int32_t tx_clear_timeout_ms;
-    int32_t rx_detect_timeout_ms;
-    int32_t rx_done_timeout_ms;
-    int32_t mqtt_status_period_ms;
+    int32_t run_pwm;                    /* Direct-PWM debug value. Runtime key: run_pwm. */
+    int32_t run_speed_counts_per_sec;   /* Job speed target in encoder counts/sec. */
+    int32_t speed_kp_milli;             /* Speed P gain scaled by 1000; 50 means 0.050. */
+    int32_t speed_pwm_scale_milli;      /* Planned-speed to PWM scale, scaled by 1000. */
+    int32_t done_hold_ms;               /* DONE-state hold time before returning to IDLE. */
+    int32_t tx_detect_timeout_ms;       /* TX timeout while waiting for tray detect at S1. */
+    int32_t tx_clear_timeout_ms;        /* TX timeout while waiting for tray to clear S1. */
+    int32_t rx_detect_timeout_ms;       /* RX timeout while waiting for tray detect at S0. */
+    int32_t rx_done_timeout_ms;         /* RX timeout while waiting for tray detect at S1. */
+    int32_t mqtt_status_period_ms;      /* Period between MQTT status publishes. */
 } runtime_config_t;
 
 static runtime_config_t runtime_config;
 
+/*
+ * Compile-time defaults come from config.h. Saved NVS values override these
+ * during boot, and serial setconfig writes updated values back to NVS.
+ */
 static const runtime_config_t default_config = {
     .run_pwm = CONVEYOR_RUN_PWM,
     .run_speed_counts_per_sec = CONVEYOR_RUN_SPEED_COUNTS_PER_SEC,
@@ -41,34 +45,34 @@ static const runtime_config_t default_config = {
 static bool value_is_valid(const char *name, int32_t value)
 {
     if (strcmp(name, "run_pwm") == 0) {
-        return value >= 0 && value <= 255;
+        return value >= 0 && value <= 255; /* 8-bit LEDC duty. */
     }
     if (strcmp(name, "run_speed_counts_per_sec") == 0) {
-        return value >= 0 && value <= 100000;
+        return value >= 0 && value <= 100000; /* Positive job speed only. */
     }
     if (strcmp(name, "speed_kp_milli") == 0) {
-        return value >= 0 && value <= 100000;
+        return value >= 0 && value <= 100000; /* 0.000 to 100.000. */
     }
     if (strcmp(name, "speed_pwm_scale_milli") == 0) {
-        return value >= 0 && value <= 100000;
+        return value >= 0 && value <= 100000; /* 0.000 to 100.000 PWM scale. */
     }
     if (strcmp(name, "done_hold_ms") == 0) {
-        return value >= 0 && value <= 60000;
+        return value >= 0 && value <= 60000; /* 0 allows immediate IDLE return. */
     }
     if (strcmp(name, "tx_detect_timeout_ms") == 0) {
-        return value >= 1 && value <= 600000;
+        return value >= 1 && value <= 600000; /* 1 ms to 10 minutes. */
     }
     if (strcmp(name, "tx_clear_timeout_ms") == 0) {
-        return value >= 1 && value <= 600000;
+        return value >= 1 && value <= 600000; /* 1 ms to 10 minutes. */
     }
     if (strcmp(name, "rx_detect_timeout_ms") == 0) {
-        return value >= 1 && value <= 600000;
+        return value >= 1 && value <= 600000; /* 1 ms to 10 minutes. */
     }
     if (strcmp(name, "rx_done_timeout_ms") == 0) {
-        return value >= 1 && value <= 600000;
+        return value >= 1 && value <= 600000; /* 1 ms to 10 minutes. */
     }
     if (strcmp(name, "mqtt_status_period_ms") == 0) {
-        return value >= 100 && value <= 60000;
+        return value >= 100 && value <= 60000; /* Avoid spamming MQTT faster than 10 Hz. */
     }
 
     return false;

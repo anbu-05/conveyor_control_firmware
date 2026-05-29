@@ -115,7 +115,7 @@ Effect:
 
 - Sets `M0.target_speed` to `100`.
 - Enables `M0.speed_control`.
-- The PID controller task reads PCNT, calculates current speed, and writes PWM/direction requests.
+- The motor PID task reads PCNT, calculates current speed, and writes PWM/direction to hardware.
 
 Success output:
 

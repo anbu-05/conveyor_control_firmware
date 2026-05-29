@@ -3,6 +3,8 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_err.h"
 #include "runtime_config.h"
@@ -18,7 +20,19 @@ static int abs_int(int value)
     return value;
 }
 
-void pid_controller_task(void *arg)
+static int clamp_int(int value, int minimum, int maximum)
+{
+    if (value < minimum) {
+        return minimum;
+    }
+    if (value > maximum) {
+        return maximum;
+    }
+
+    return value;
+}
+
+void motor_pid_task(void *arg)
 {
     motor_t *motor = (motor_t *)arg;
     int count = 0;
@@ -39,7 +53,7 @@ void pid_controller_task(void *arg)
     int current_direction = 0;
     int speed_control = 0;
     int watch_ticks = 0;
-    int watch_period_ticks = ENCODER_WATCH_DELAY_MS / PID_CONTROLLER_DELAY_MS;
+    int watch_period_ticks = ENCODER_WATCH_DELAY_MS / MOTOR_PID_DELAY_MS;
 
     if (watch_period_ticks < 1) {
         watch_period_ticks = 1;
@@ -49,7 +63,7 @@ void pid_controller_task(void *arg)
 
     while (1) {
         ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &count));
-        raw_speed = ((count - last_count) * 1000) / PID_CONTROLLER_DELAY_MS;
+        raw_speed = ((count - last_count) * 1000) / MOTOR_PID_DELAY_MS;
         last_count = count;
 
         speed_sample_sum -= speed_samples[speed_sample_index];
@@ -66,7 +80,9 @@ void pid_controller_task(void *arg)
         motor->current_speed = speed;
         target_speed = motor->target_speed;
         planned_speed = motor->planned_speed;
+        pwm = motor->pwm;
         current_direction = motor->direction;
+        direction = current_direction;
         speed_control = motor->speed_control ? 1 : 0;
         xSemaphoreGive(motor_mutex);
 
@@ -75,6 +91,9 @@ void pid_controller_task(void *arg)
                 direction = current_direction;
                 if (planned_speed > 0) {
                     acceleration_step = -((planned_speed * runtime_config_speed_kp_milli()) / 1000);
+                    acceleration_step = clamp_int(acceleration_step,
+                                                  -CONVEYOR_SPEED_ACCEL_STEP_COUNTS,
+                                                  CONVEYOR_SPEED_ACCEL_STEP_COUNTS);
                     if (acceleration_step == 0) {
                         acceleration_step = -1;
                     }
@@ -95,6 +114,9 @@ void pid_controller_task(void *arg)
 
                 error = target_abs - speed_along_target;
                 acceleration_step = (error * runtime_config_speed_kp_milli()) / 1000;
+                acceleration_step = clamp_int(acceleration_step,
+                                              -CONVEYOR_SPEED_ACCEL_STEP_COUNTS,
+                                              CONVEYOR_SPEED_ACCEL_STEP_COUNTS);
                 planned_speed += acceleration_step;
 
                 if (planned_speed < 0) {
@@ -121,6 +143,10 @@ void pid_controller_task(void *arg)
             xSemaphoreGive(motor_mutex);
         }
 
+        ESP_ERROR_CHECK(gpio_set_level(motor->dir_gpio, direction));
+        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel, pwm));
+        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel));
+
         watch_ticks++;
         if (watch_ticks >= watch_period_ticks) {
             watch_ticks = 0;
@@ -130,6 +156,6 @@ void pid_controller_task(void *arg)
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(PID_CONTROLLER_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(MOTOR_PID_DELAY_MS));
     }
 }
