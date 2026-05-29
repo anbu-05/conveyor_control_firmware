@@ -8,20 +8,22 @@ this usually appears as `/dev/ttyACM0`.
 Commands are strict and literal. Case changes, aliases, missing arguments, or
 extra arguments are rejected.
 
-## Direction Reference
+## Sensor Reference
 
 The firmware treats the physical sensors like this:
 
 ```text
-S0 = left sensor
-S1 = right sensor
+S0 = entry sensor
+S1 = exit sensor
 ```
 
-Job commands use conveyor-relative directions:
+The conveyor always moves a tray from `S0` toward `S1`.
 
 ```text
-right = move from S0 toward S1
-left  = move from S1 toward S0
+tx0 = S0
+tx1 = S1
+rx0 = S0
+rx1 = S1
 ```
 
 ## `setmotor M0 128 1`
@@ -283,21 +285,22 @@ ERR CONFIG_BUSY
 ERR CONFIG_SAVE
 ```
 
-## `jobtx right`
+## `jobtx`
 
 Submits a transmitter job to the central conveyor state machine.
 
 Input:
 
 ```text
-jobtx right
+jobtx
 ```
 
 Effect:
 
 - Queues `CONVEYOR_CMD_START_TX`.
-- Direction is `right`, so the tray moves from `S0` toward `S1`.
+- The tray moves from `S0` toward `S1`.
 - The state machine starts the motor immediately if it is idle.
+- TX waits for `tx1` / `S1`, then stops after `tx1` clears.
 
 Success output:
 
@@ -309,49 +312,26 @@ Possible error outputs:
 
 ```text
 ERR BAD_ARGS
-ERR BAD_DIRECTION
 ERR JOB_BUSY
 ERR JOB_QUEUE
 ```
 
-## `jobtx left`
-
-Submits a transmitter job to the central conveyor state machine.
-
-Input:
-
-```text
-jobtx left
-```
-
-Effect:
-
-- Queues `CONVEYOR_CMD_START_TX`.
-- Direction is `left`, so the tray moves from `S1` toward `S0`.
-- The state machine starts the motor immediately if it is idle.
-
-Success output:
-
-```text
-OK JOBTX
-```
-
-## `jobrx right`
+## `jobrx`
 
 Submits a receiver job to the central conveyor state machine.
 
 Input:
 
 ```text
-jobrx right
+jobrx
 ```
 
 Effect:
 
 - Queues `CONVEYOR_CMD_START_RX`.
-- Direction is `right`.
 - The receiver arms without moving.
-- The motor starts only after `rx_1` detects a tray.
+- The motor starts only after `rx0` / `S0` detects a tray.
+- The motor stops when `rx1` / `S1` detects the tray.
 
 Success output:
 
@@ -363,32 +343,8 @@ Possible error outputs:
 
 ```text
 ERR BAD_ARGS
-ERR BAD_DIRECTION
 ERR JOB_BUSY
 ERR JOB_QUEUE
-```
-
-## `jobrx left`
-
-Submits a receiver job to the central conveyor state machine.
-
-Input:
-
-```text
-jobrx left
-```
-
-Effect:
-
-- Queues `CONVEYOR_CMD_START_RX`.
-- Direction is `left`.
-- The receiver arms without moving.
-- The motor starts only after `rx_1` detects a tray.
-
-Success output:
-
-```text
-OK JOBRX
 ```
 
 ## `estop`
@@ -460,10 +416,10 @@ READY conveyor
 Job events:
 
 ```text
-EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
-EVENT JOB C0 TX_WAIT_FOR_TX2_CLEAR right
-EVENT JOB C0 TX_DONE right
-EVENT JOB C0 IDLE right
+EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
+EVENT JOB C0 TX_WAIT_FOR_TX1_CLEAR
+EVENT JOB C0 TX_DONE
+EVENT JOB C0 IDLE
 ```
 
 Unknown command:

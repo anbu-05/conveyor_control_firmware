@@ -24,11 +24,6 @@ bool mqtt_task_is_connected(void)
     return mqtt_connected;
 }
 
-static bool text_has(const char *text, const char *part)
-{
-    return strstr(text, part) != NULL;
-}
-
 static void publish_text(const char *text)
 {
     if (!mqtt_connected || mqtt_client == NULL || text == NULL) {
@@ -49,40 +44,23 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
     if (status->state == CONVEYOR_STATE_ERROR || status->state == CONVEYOR_STATE_ESTOP) {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"direction\":\"%s\",\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
-                 conveyor_direction_name(status->direction),
                  status->error,
                  status->s0,
                  status->s1);
     } else {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"direction\":\"%s\",\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"s0\":%d,\"s1\":%d}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
-                 conveyor_direction_name(status->direction),
                  status->s0,
                  status->s1);
     }
 
     publish_text(message);
-}
-
-static bool parse_direction(const char *message, conveyor_direction_t *direction)
-{
-    if (text_has(message, "\"direction\":\"left\"")) {
-        *direction = CONVEYOR_DIR_LEFT;
-        return true;
-    }
-
-    if (text_has(message, "\"direction\":\"right\"")) {
-        *direction = CONVEYOR_DIR_RIGHT;
-        return true;
-    }
-
-    return false;
 }
 
 static void publish_bad_command(const char *error)
@@ -107,13 +85,8 @@ static void handle_command_message(const char *message)
 {
     conveyor_cmd_t command;
 
-    if (text_has(message, "\"type\":\"tx\"")) {
+    if (strcmp(message, "{\"type\":\"tx\"}") == 0) {
         if (reject_if_busy()) {
-            return;
-        }
-
-        if (!parse_direction(message, &command.direction)) {
-            publish_bad_command("BAD_DIRECTION");
             return;
         }
 
@@ -124,13 +97,8 @@ static void handle_command_message(const char *message)
         return;
     }
 
-    if (text_has(message, "\"type\":\"rx\"")) {
+    if (strcmp(message, "{\"type\":\"rx\"}") == 0) {
         if (reject_if_busy()) {
-            return;
-        }
-
-        if (!parse_direction(message, &command.direction)) {
-            publish_bad_command("BAD_DIRECTION");
             return;
         }
 
@@ -141,18 +109,16 @@ static void handle_command_message(const char *message)
         return;
     }
 
-    if (text_has(message, "\"type\":\"emergency_stop\"")) {
+    if (strcmp(message, "{\"type\":\"emergency_stop\"}") == 0) {
         command.type = CONVEYOR_CMD_EMERGENCY_STOP;
-        command.direction = CONVEYOR_DIR_RIGHT;
         if (!conveyor_job_send_command(command)) {
             publish_bad_command("QUEUE_FULL");
         }
         return;
     }
 
-    if (text_has(message, "\"type\":\"clear_error\"")) {
+    if (strcmp(message, "{\"type\":\"clear_error\"}") == 0) {
         command.type = CONVEYOR_CMD_CLEAR_ERROR;
-        command.direction = CONVEYOR_DIR_RIGHT;
         if (!conveyor_job_send_command(command)) {
             publish_bad_command("QUEUE_FULL");
         }
@@ -166,10 +132,9 @@ static void handle_emergency_message(const char *message)
 {
     conveyor_cmd_t command = {
         .type = CONVEYOR_CMD_EMERGENCY_STOP,
-        .direction = CONVEYOR_DIR_RIGHT,
     };
 
-    if (strcmp(message, "STOP") == 0 || text_has(message, "\"type\":\"emergency_stop\"")) {
+    if (strcmp(message, "STOP") == 0 || strcmp(message, "{\"type\":\"emergency_stop\"}") == 0) {
         if (!conveyor_job_send_command(command)) {
             publish_bad_command("QUEUE_FULL");
         }

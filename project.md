@@ -22,6 +22,10 @@ Added runtime-editable config values backed by NVS. Serial debug commands can re
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
+Removed the old conveyor `left`/`right` job convention. The conveyor now always moves trays from `S0` to `S1`. Logical job sensors are zero-based: `tx0 = S0`, `tx1 = S1`, `rx0 = S0`, and `rx1 = S1`.
+
+Added `docs/mqtt-implementation.md` with MQTT startup flow, compile-time switches, exact parser behavior, queue handoff, feedback publishing, runtime status period behavior, and current MQTT limits.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
@@ -47,7 +51,7 @@ ERR BAD_VALUE
 ERR CONFIG_BUSY
 ERR CONFIG_SAVE
 EVENT SENSOR S0 1 0
-EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
+EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
 CONFIG run_pwm 128
 ```
 
@@ -67,13 +71,14 @@ CONFIG run_pwm 128
 - `main/tasks/mqtt_task.h`: MQTT setup, status task, and publishing API.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON parsing, command queue submission, and status publishing.
 - `main/tasks/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
-- `main/conveyor/conveyor_job.h`: Conveyor command, direction, state, status, setup, and task declarations.
+- `main/conveyor/conveyor_job.h`: Conveyor command, state, status, setup, and task declarations.
 - `main/conveyor/conveyor_job.c`: Central TX/RX conveyor transfer state machine and job queue setup.
 - `components/microrl/`: Small vendored microrl-style command parser used by this app.
 - `docs/architecture.mmd`: Mermaid chart of the current command and motor-control flow.
 - `docs/code-structure.mmd`: Mermaid chart of files, functions, callbacks, and shared state.
 - `docs/serial-debug-commands.md`: Detailed microrl command reference.
 - `docs/mqtt-control-commands.md`: Detailed MQTT topic, payload, and feedback reference.
+- `docs/mqtt-implementation.md`: Detailed MQTT implementation and task-flow reference.
 - `docs/conveyor-state-machine.md`: Detailed TX/RX state machine reference.
 - `README.md`: Human-facing usage, wiring, commands, and build notes.
 - `sdkconfig.defaults`: Default log level config.
@@ -128,10 +133,8 @@ getconfig
 getconfig run_pwm
 setconfig run_pwm 140
 resetconfig
-jobtx left
-jobtx right
-jobrx left
-jobrx right
+jobtx
+jobrx
 estop
 clearerror
 ```
@@ -145,20 +148,18 @@ clearerror
 - `getconfig run_pwm`: prints one editable runtime config value.
 - `setconfig run_pwm 140`: validates, saves, and applies a runtime config value.
 - `resetconfig`: restores editable runtime config values to defaults.
-- `jobtx left/right`: submits a transmitter job to the conveyor state machine.
-- `jobrx left/right`: submits a receiver job to the conveyor state machine.
+- `jobtx`: submits a transmitter job to the conveyor state machine.
+- `jobrx`: submits a receiver job to the conveyor state machine.
 - `estop`: stops the active conveyor job and motor immediately.
 - `clearerror`: returns `ERROR` or `ESTOP` to `IDLE`.
 
-Invalid command names, motor names, argument counts, PWM values, direction values, config names, or config values are rejected.
+Invalid command names, motor names, argument counts, PWM values, direct motor direction values, config names, or config values are rejected.
 
 MQTT commands are high-level JSON only:
 
 ```json
-{"type":"tx","direction":"right"}
-{"type":"tx","direction":"left"}
-{"type":"rx","direction":"right"}
-{"type":"rx","direction":"left"}
+{"type":"tx"}
+{"type":"rx"}
 {"type":"emergency_stop"}
 {"type":"clear_error"}
 ```
@@ -188,10 +189,10 @@ MQTT defaults:
 Current high-level job states:
 
 - `IDLE`
-- `TX_WAIT_FOR_TX2_DETECT`
-- `TX_WAIT_FOR_TX2_CLEAR`
+- `TX_WAIT_FOR_TX1_DETECT`
+- `TX_WAIT_FOR_TX1_CLEAR`
+- `RX_WAIT_FOR_RX0`
 - `RX_WAIT_FOR_RX1`
-- `RX_WAIT_FOR_RX2`
 - `TX_DONE`
 - `RX_DONE`
 - `ERROR`
@@ -206,8 +207,9 @@ Current high-level job states:
 - The MD30C `D` pin is connected to GPIO6.
 - Sensor `S0` is connected to GPIO4 with an external pullup.
 - Sensor `S1` is connected to GPIO5 with an external pullup.
-- `S0` is treated as the left sensor.
-- `S1` is treated as the right sensor.
+- `S0` is the entry sensor.
+- `S1` is the exit sensor.
+- The tray always moves from `S0` toward `S1`.
 - Sensors are active low: GPIO `0` means tray detected.
 - Commands are strict and literal.
 - Sensor output is binary. Both 1 to 0 and 0 to 1 transitions are printed when watching is enabled.

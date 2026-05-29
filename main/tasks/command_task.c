@@ -8,21 +8,6 @@
 #include "microrl.h"
 #include "runtime_config.h"
 
-static bool parse_job_direction(const char *text, conveyor_direction_t *direction)
-{
-    if (strcmp(text, "left") == 0) {
-        *direction = CONVEYOR_DIR_LEFT;
-        return true;
-    }
-
-    if (strcmp(text, "right") == 0) {
-        *direction = CONVEYOR_DIR_RIGHT;
-        return true;
-    }
-
-    return false;
-}
-
 static void send_job_command(conveyor_cmd_t command, const char *ok_text)
 {
     if ((command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) &&
@@ -166,7 +151,6 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "stop") == 0) {
         conveyor_cmd_t command = {
             .type = CONVEYOR_CMD_EMERGENCY_STOP,
-            .direction = CONVEYOR_DIR_RIGHT,
         };
 
         if (argc != 1) {
@@ -184,13 +168,8 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "jobtx") == 0) {
         conveyor_cmd_t command;
 
-        if (argc != 2) {
+        if (argc != 1) {
             console_print("ERR BAD_ARGS\r\n");
-            return 0;
-        }
-
-        if (!parse_job_direction(argv[1], &command.direction)) {
-            console_print("ERR BAD_DIRECTION\r\n");
             return 0;
         }
 
@@ -202,13 +181,8 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "jobrx") == 0) {
         conveyor_cmd_t command;
 
-        if (argc != 2) {
+        if (argc != 1) {
             console_print("ERR BAD_ARGS\r\n");
-            return 0;
-        }
-
-        if (!parse_job_direction(argv[1], &command.direction)) {
-            console_print("ERR BAD_DIRECTION\r\n");
             return 0;
         }
 
@@ -220,7 +194,6 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "estop") == 0) {
         conveyor_cmd_t command = {
             .type = CONVEYOR_CMD_EMERGENCY_STOP,
-            .direction = CONVEYOR_DIR_RIGHT,
         };
 
         if (argc != 1) {
@@ -235,7 +208,6 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "clearerror") == 0) {
         conveyor_cmd_t command = {
             .type = CONVEYOR_CMD_CLEAR_ERROR,
-            .direction = CONVEYOR_DIR_RIGHT,
         };
 
         if (argc != 1) {

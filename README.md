@@ -15,23 +15,36 @@ ESP-IDF starter project for controlling a motor through a Cytron MD30C.
 
 Check your exact ESP32-S3 board pinout before wiring. GPIO7 and GPIO6 must be available on your board.
 
-## Conveyor Direction Reference
+## Conveyor Sensor Reference
 
 This firmware treats the two physical sensors like this:
 
 ```text
-S0 = left sensor
-S1 = right sensor
+S0 = entry sensor
+S1 = exit sensor
 ```
 
-`left` and `right` are conveyor-relative directions. When a command says
-`right`, the tray is expected to move from `S0` toward `S1`. When a command
-says `left`, the tray is expected to move from `S1` toward `S0`.
+The conveyor always moves a tray from `S0` toward `S1`.
+
+For TX jobs:
+
+```text
+tx0 = S0
+tx1 = S1
+```
+
+For RX jobs:
+
+```text
+rx0 = S0
+rx1 = S1
+```
 
 ## Detailed Docs
 
 - [Serial Debug Commands](docs/serial-debug-commands.md)
 - [MQTT Control Commands](docs/mqtt-control-commands.md)
+- [MQTT Implementation](docs/mqtt-implementation.md)
 - [Conveyor Controller State Machine](docs/conveyor-state-machine.md)
 
 ## Serial Output Format
@@ -57,10 +70,10 @@ EVENT SENSOR S1 0 1
 Job event examples:
 
 ```text
-EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
-EVENT JOB C0 TX_WAIT_FOR_TX2_CLEAR right
-EVENT JOB C0 TX_DONE right
-EVENT JOB C0 IDLE right
+EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
+EVENT JOB C0 TX_WAIT_FOR_TX1_CLEAR
+EVENT JOB C0 TX_DONE
+EVENT JOB C0 IDLE
 ```
 
 Errors:

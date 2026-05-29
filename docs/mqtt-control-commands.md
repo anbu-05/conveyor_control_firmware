@@ -9,6 +9,9 @@ MQTT handling lives in `main/tasks/mqtt_task.c`. Parsed MQTT commands are sent
 to the same central conveyor job queue used by serial `jobtx`, `jobrx`,
 `estop`, and `clearerror`.
 
+Implementation details are documented in
+[`docs/mqtt-implementation.md`](mqtt-implementation.md).
+
 ## Defaults
 
 ```text
@@ -28,13 +31,16 @@ It can be changed at runtime with serial debug:
 setconfig mqtt_status_period_ms 500
 ```
 
-## Direction Reference
+## Sensor Reference
 
 ```text
-S0 = left sensor
-S1 = right sensor
-right = move from S0 toward S1
-left  = move from S1 toward S0
+S0 = entry sensor
+S1 = exit sensor
+tray movement = S0 toward S1
+tx0 = S0
+tx1 = S1
+rx0 = S0
+rx1 = S1
 ```
 
 ## Command Topic
@@ -45,60 +51,34 @@ Publish normal job commands to:
 conveyor/C0/cmd
 ```
 
-### Start TX Right
+### Start TX
 
 Payload:
 
 ```json
-{"type":"tx","direction":"right"}
+{"type":"tx"}
 ```
 
 Effect:
 
 - Starts a transmitter job if the conveyor is `IDLE`.
 - Moves the tray from `S0` toward `S1`.
-- The state machine applies the TX stop rule using `tx_2`.
+- The state machine applies the TX stop rule using `tx1`.
 
-### Start TX Left
-
-Payload:
-
-```json
-{"type":"tx","direction":"left"}
-```
-
-Effect:
-
-- Starts a transmitter job if the conveyor is `IDLE`.
-- Moves the tray from `S1` toward `S0`.
-
-### Arm RX Right
+### Arm RX
 
 Payload:
 
 ```json
-{"type":"rx","direction":"right"}
+{"type":"rx"}
 ```
 
 Effect:
 
 - Arms a receiver job if the conveyor is `IDLE`.
-- The motor stays stopped until `rx_1` detects a tray.
-- When `rx_1` detects, the conveyor moves from `S0` toward `S1`.
-
-### Arm RX Left
-
-Payload:
-
-```json
-{"type":"rx","direction":"left"}
-```
-
-Effect:
-
-- Arms a receiver job if the conveyor is `IDLE`.
-- The motor stays stopped until `rx_1` detects a tray.
-- When `rx_1` detects, the conveyor moves from `S1` toward `S0`.
+- The motor stays stopped until `rx0` detects a tray.
+- When `rx0` detects, the conveyor moves from `S0` toward `S1`.
+- The motor stops when `rx1` detects the tray.
 
 ### Emergency Stop
 
@@ -161,19 +141,19 @@ conveyor/C0/feedback
 Normal status example:
 
 ```json
-{"id":"C0","state":"TX_WAIT_FOR_TX2_CLEAR","direction":"right","s0":1,"s1":0}
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","s0":1,"s1":0}
 ```
 
 Done example:
 
 ```json
-{"id":"C0","state":"RX_DONE","direction":"left","s0":0,"s1":0}
+{"id":"C0","state":"RX_DONE","s0":0,"s1":0}
 ```
 
 Error example:
 
 ```json
-{"id":"C0","state":"ERROR","direction":"right","error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
+{"id":"C0","state":"ERROR","error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
 ```
 
 Bad command example:
@@ -185,15 +165,17 @@ Bad command example:
 ## Parser Notes
 
 The current JSON parser is intentionally simple and literal. It checks for
-exact text fragments like:
+exact compact payloads like:
 
 ```text
-"type":"tx"
-"direction":"right"
+{"type":"tx"}
+{"type":"rx"}
+{"type":"emergency_stop"}
+{"type":"clear_error"}
 ```
 
 Whitespace inside JSON fields is not currently handled by a real JSON parser.
 Use compact payloads exactly like the examples above.
 
-Unknown command types, bad directions, full queues, and busy state publish an
-error message to the feedback topic.
+Unknown command types, full queues, and busy state publish an error message to
+the feedback topic.
