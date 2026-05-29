@@ -18,6 +18,8 @@ stateDiagram
     motor_controller --> motors : GPIO direction + LEDC PWM
     sensor_controller --> statemachine : active-low sensor state
     sensors --> sensor_controller : GPIO input
-    encoders --> PID_controller : future encoder count
+    encoder_filter: encoder_filter
+    encoders --> encoder_filter : raw encoder count
+    encoder_filter --> PID_controller : filtered encoder count
     PID_controller --> motor_controller : future closed-loop motor request
     motor_controller --> PID_controller : future current motor state

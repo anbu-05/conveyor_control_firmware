@@ -14,6 +14,7 @@
 static QueueHandle_t conveyor_cmd_queue;
 static conveyor_status_t current_status = {
     .state = CONVEYOR_STATE_IDLE,
+    .state_elapsed_ms = 0,
     .error = "",
     .s0 = 1,
     .s1 = 1,
@@ -53,6 +54,11 @@ const char *conveyor_state_name(conveyor_state_t state)
     return "UNKNOWN";
 }
 
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
 void conveyor_job_get_status(conveyor_status_t *status)
 {
     if (status == NULL) {
@@ -61,6 +67,7 @@ void conveyor_job_get_status(conveyor_status_t *status)
 
     current_status.s0 = sensors[0].value;
     current_status.s1 = sensors[1].value;
+    current_status.state_elapsed_ms = now_ms() - state_started_ms;
     *status = current_status;
 }
 
@@ -94,11 +101,6 @@ bool conveyor_job_is_idle(void)
     return current_status.state == CONVEYOR_STATE_IDLE;
 }
 
-static uint32_t now_ms(void)
-{
-    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-}
-
 static bool tray_detected(int sensor_index)
 {
     return sensors[sensor_index].value == 0;
@@ -123,6 +125,7 @@ static void publish_status(void)
 {
     current_status.s0 = sensors[0].value;
     current_status.s1 = sensors[1].value;
+    current_status.state_elapsed_ms = now_ms() - state_started_ms;
 
     console_printf("EVENT JOB %s %s\r\n",
                    CONVEYOR_ID,

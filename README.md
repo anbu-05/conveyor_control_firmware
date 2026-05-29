@@ -1,6 +1,8 @@
 # conveyor
 
-ESP-IDF starter project for controlling a motor through a Cytron MD30C.
+ESP-IDF project for one conveyor controller using an ESP32-S3, a Cytron
+MD30C motor driver, two tray sensors, serial debug commands, and MQTT
+high-level control.
 
 ## Hardware
 
@@ -11,6 +13,7 @@ ESP-IDF starter project for controlling a motor through a Cytron MD30C.
 - Sensor `S1`: GPIO5
 - ESP32 ground and MD30C ground must be connected together.
 - Motor power should come from the motor power supply, not from the ESP32.
+- The sensor inputs are active-low in the current firmware.
 - The sensor inputs use external pullups. Internal pullups and pulldowns are disabled.
 
 Check your exact ESP32-S3 board pinout before wiring. GPIO7 and GPIO6 must be available on your board.
@@ -47,11 +50,76 @@ always triggers `S0`, `S1`, or both. The firmware derives tray presence as:
 has_tray = S0 detected OR S1 detected
 ```
 
+Sensor GPIO meaning in the current firmware:
+
+```text
+GPIO 0 = tray detected
+GPIO 1 = no tray
+```
+
 MQTT publishes tray-presence changes on:
 
 ```text
 conveyor/C0/tray
 ```
+
+MQTT job feedback is published on:
+
+```text
+conveyor/C0/feedback
+```
+
+Feedback includes `state_elapsed_ms`, the elapsed milliseconds since the
+current conveyor state was entered.
+
+Example:
+
+```json
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0}
+```
+
+## MQTT Defaults
+
+```text
+WiFi SSID: thrd_warehouse
+Broker: mqtt://192.168.1.126
+Conveyor ID: C0
+Command topic: conveyor/C0/cmd
+Emergency topic: conveyor/C0/emergency
+All-conveyors emergency topic: conveyor/all/emergency
+Feedback topic: conveyor/C0/feedback
+Tray topic: conveyor/C0/tray
+```
+
+MQTT accepts high-level compact payloads only:
+
+```json
+{"type":"tx"}
+{"type":"rx"}
+{"type":"emergency_stop"}
+{"type":"clear_error"}
+```
+
+Tray status publishes once on MQTT connect, then only when `has_tray` changes.
+
+## Runtime Config
+
+Runtime-editable values are loaded from NVS. Defaults are still defined in
+`main/config/config.h`.
+
+Current editable keys:
+
+```text
+run_pwm
+done_hold_ms
+tx_detect_timeout_ms
+tx_clear_timeout_ms
+rx_detect_timeout_ms
+rx_done_timeout_ms
+mqtt_status_period_ms
+```
+
+Use the serial debug commands `getconfig`, `setconfig`, and `resetconfig`.
 
 ## Detailed Docs
 
@@ -101,6 +169,10 @@ ERR JOB_QUEUE
 ERR JOB_BUSY
 ERR NO_TRAY
 ERR TRAY_PRESENT
+ERR UNKNOWN_CONFIG
+ERR BAD_VALUE
+ERR CONFIG_BUSY
+ERR CONFIG_SAVE
 ```
 
 ESP-IDF boot logs can still appear before `READY conveyor`. A wrapper should

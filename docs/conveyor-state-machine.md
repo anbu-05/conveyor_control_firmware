@@ -67,6 +67,10 @@ CONVEYOR_CMD_CLEAR_ERROR
 Only one TX/RX job can run at a time. If the conveyor is not `IDLE`, a new TX
 or RX command is rejected as busy.
 
+The state machine tracks how long the conveyor has been in the current state.
+This timer resets whenever a new state is entered. MQTT feedback publishes it
+as `state_elapsed_ms`.
+
 ## States
 
 ```text

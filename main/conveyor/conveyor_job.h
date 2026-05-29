@@ -29,6 +29,7 @@ typedef struct {
 
 typedef struct {
     conveyor_state_t state;
+    uint32_t state_elapsed_ms;
     char error[32];
     int s0;
     int s1;

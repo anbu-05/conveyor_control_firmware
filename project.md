@@ -28,6 +28,10 @@ Added `docs/mqtt-implementation.md` with MQTT startup flow, compile-time switche
 
 Added central tray-presence status based on the physical assumption that tray length is greater than the distance between `S0` and `S1`. `has_tray` is true when either sensor detects a tray. MQTT publishes change-driven tray status on `conveyor/C0/tray`, and serial debug exposes `gettray`.
 
+MQTT feedback now includes `state_elapsed_ms`, the elapsed milliseconds since the current conveyor state was entered. MQTT command errors now include the real current conveyor state, timer, and raw sensor values.
+
+Current sensor interpretation is active-low: raw GPIO `0` means tray detected, and raw GPIO `1` means no tray.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
@@ -178,7 +182,7 @@ MQTT commands are high-level JSON only:
 MQTT defaults:
 
 - WiFi SSID: `thrd_warehouse`
-- Broker URI: `mqtt://192.168.1.220`
+- Broker URI: `mqtt://192.168.1.126`
 - Conveyor ID: `C0`
 - Command topic: `conveyor/C0/cmd`
 - Emergency topic: `conveyor/C0/emergency`
@@ -191,7 +195,7 @@ MQTT defaults:
 - `main/main.c`: creates shared mutexes, configures console/PWM/sensors/job queue, starts tasks.
 - `microrl_task`: reads console stdin input and edits shared state through command handlers.
 - `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
-- `mqtt_status_task`: publishes periodic conveyor status when MQTT status output is enabled.
+- `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
 - `conveyor_job_task`: owns the TX/RX state machine and submits move/stop requests to the motor state.
 - `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
@@ -225,6 +229,7 @@ Current high-level job states:
 - The tray length is greater than the distance between `S0` and `S1`.
 - A tray on the conveyor always triggers at least one of `S0` or `S1`.
 - Sensors are active low: GPIO `0` means tray detected.
+- MQTT feedback includes `state_elapsed_ms`, measured from the current state's entry time.
 - Commands are strict and literal.
 - Sensor output is binary. Both 1 to 0 and 0 to 1 transitions are printed when watching is enabled.
 - PCNT will be handled later by a task that reads PCNT count and updates `motor.position`.

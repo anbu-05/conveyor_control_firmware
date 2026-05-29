@@ -65,7 +65,7 @@ static void publish_tray_status(bool force)
 
 void mqtt_publish_job_status(const conveyor_status_t *status)
 {
-    char message[192];
+    char message[256];
 
     if (status == NULL) {
         return;
@@ -74,18 +74,20 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
     if (status->state == CONVEYOR_STATE_ERROR || status->state == CONVEYOR_STATE_ESTOP) {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
+                 (unsigned long)status->state_elapsed_ms,
                  status->error,
                  status->s0,
                  status->s1);
     } else {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
+                 (unsigned long)status->state_elapsed_ms,
                  status->s0,
                  status->s1);
     }
@@ -95,9 +97,19 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
 
 static void publish_bad_command(const char *error)
 {
-    char message[96];
+    conveyor_status_t status;
+    char message[256];
 
-    snprintf(message, sizeof(message), "{\"id\":\"%s\",\"state\":\"ERROR\",\"error\":\"%s\"}", CONVEYOR_ID, error);
+    conveyor_job_get_status(&status);
+    snprintf(message,
+             sizeof(message),
+             "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
+             CONVEYOR_ID,
+             conveyor_state_name(status.state),
+             (unsigned long)status.state_elapsed_ms,
+             error,
+             status.s0,
+             status.s1);
     publish_text(message);
 }
 

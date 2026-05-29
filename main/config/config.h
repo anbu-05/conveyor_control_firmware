@@ -8,7 +8,7 @@
 
 #define CONVEYOR_WIFI_SSID "thrd_warehouse"
 #define CONVEYOR_WIFI_PASS "thrd@789"
-#define CONVEYOR_MQTT_BROKER_URI "mqtt://192.168.1.220"
+#define CONVEYOR_MQTT_BROKER_URI "mqtt://192.168.1.126"
 
 #define CONVEYOR_MQTT_TOPIC_CMD "conveyor/C0/cmd"
 #define CONVEYOR_MQTT_TOPIC_EMERGENCY "conveyor/C0/emergency"

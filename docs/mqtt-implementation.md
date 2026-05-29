@@ -228,20 +228,24 @@ That function is called from two places:
 Normal status format:
 
 ```json
-{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","s0":1,"s1":0}
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0}
 ```
 
 Error status format:
 
 ```json
-{"id":"C0","state":"ERROR","error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
+{"id":"C0","state":"ERROR","state_elapsed_ms":20,"error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
 ```
 
 Command parsing errors are also published to the feedback topic:
 
 ```json
-{"id":"C0","state":"ERROR","error":"UNKNOWN_COMMAND"}
+{"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0}
 ```
+
+`state_elapsed_ms` is computed by the conveyor job state machine. It is the
+elapsed time, in milliseconds, since the current conveyor state was entered.
+It resets whenever the state machine enters a new state.
 
 ## Tray Publishing
 

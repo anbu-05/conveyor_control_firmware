@@ -148,26 +148,29 @@ conveyor/C0/feedback
 Normal status example:
 
 ```json
-{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","s0":1,"s1":0}
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0}
 ```
 
 Done example:
 
 ```json
-{"id":"C0","state":"RX_DONE","s0":0,"s1":0}
+{"id":"C0","state":"RX_DONE","state_elapsed_ms":40,"s0":0,"s1":0}
 ```
 
 Error example:
 
 ```json
-{"id":"C0","state":"ERROR","error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
+{"id":"C0","state":"ERROR","state_elapsed_ms":20,"error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
 ```
 
 Bad command example:
 
 ```json
-{"id":"C0","state":"ERROR","error":"UNKNOWN_COMMAND"}
+{"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0}
 ```
+
+`state_elapsed_ms` is the number of milliseconds since the current state was
+entered. It resets each time the conveyor state changes.
 
 Other command error values include:
 
