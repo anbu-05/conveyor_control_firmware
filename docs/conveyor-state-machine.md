@@ -192,16 +192,215 @@ rx_detect_timeout_ms
 rx_done_timeout_ms
 ```
 
-Timeout behavior:
+These timeout values are not compile-time-only after boot. `config.h` gives
+the default values, but the active values come from runtime config. Use
+`getconfig` to see them and `setconfig` to change them while the conveyor is
+`IDLE`.
 
-- TX detect timeout: motor stops, state becomes `ERROR`, error is
-  `TX_DETECT_TIMEOUT`.
-- TX clear timeout: motor stops, state becomes `ERROR`, error is
-  `TX_CLEAR_TIMEOUT`.
-- RX detect timeout: motor stops, state becomes `ERROR`, error is
-  `RX_DETECT_TIMEOUT`.
-- RX done timeout: motor stops, state becomes `ERROR`, error is
-  `RX_DONE_TIMEOUT`.
+Example:
+
+```text
+getconfig tx_detect_timeout_ms
+setconfig tx_detect_timeout_ms 7000
+```
+
+### TX Detect Timeout
+
+Config key:
+
+```text
+tx_detect_timeout_ms
+```
+
+Used in state:
+
+```text
+TX_WAIT_FOR_TX2_DETECT
+```
+
+TX means this conveyor is pushing a tray out to another conveyor. During TX,
+the motor starts immediately. The state machine then waits for `tx_2` to detect
+the tray.
+
+The timer starts when the TX job enters `TX_WAIT_FOR_TX2_DETECT`.
+
+This timeout means:
+
+```text
+The tray did not reach tx_2 in time.
+```
+
+For a `right` TX job, `tx_2` is `S1`.
+
+For a `left` TX job, `tx_2` is `S0`.
+
+Common causes:
+
+- There was no tray on the conveyor.
+- The motor did not move.
+- The motor direction is wrong.
+- The tray is jammed before reaching `tx_2`.
+- The sensor mapping is wrong.
+- The timeout value is too short for the conveyor speed.
+
+On expiry:
+
+- Motor stops.
+- State becomes `ERROR`.
+- Error text becomes `TX_DETECT_TIMEOUT`.
+
+### TX Clear Timeout
+
+Config key:
+
+```text
+tx_clear_timeout_ms
+```
+
+Used in state:
+
+```text
+TX_WAIT_FOR_TX2_CLEAR
+```
+
+After `tx_2` detects the tray, TX does not stop immediately. It keeps moving
+until `tx_2` becomes clear again. This confirms the tray has passed the handoff
+sensor instead of just touching it.
+
+The timer starts when the TX job enters `TX_WAIT_FOR_TX2_CLEAR`.
+
+This can happen in two ways:
+
+- `tx_2` was already detecting when the TX job started.
+- `tx_2` became detected during `TX_WAIT_FOR_TX2_DETECT`.
+
+This timeout means:
+
+```text
+The tray reached tx_2, but tx_2 did not clear in time.
+```
+
+For a `right` TX job, `tx_2` is `S1`.
+
+For a `left` TX job, `tx_2` is `S0`.
+
+Common causes:
+
+- The tray is stuck at the handoff side.
+- The receiving conveyor did not pull the tray away.
+- The `tx_2` sensor is stuck in the detected state.
+- The motor stopped mechanically even though PWM is still commanded.
+- The timeout value is too short for the tray length and speed.
+
+On expiry:
+
+- Motor stops.
+- State becomes `ERROR`.
+- Error text becomes `TX_CLEAR_TIMEOUT`.
+
+### RX Detect Timeout
+
+Config key:
+
+```text
+rx_detect_timeout_ms
+```
+
+Used in state:
+
+```text
+RX_WAIT_FOR_RX1
+```
+
+RX means this conveyor is waiting to receive a tray from another conveyor. At
+the start of RX, this conveyor does not move. It waits for `rx_1` to detect the
+incoming tray.
+
+The timer starts when the RX job enters `RX_WAIT_FOR_RX1`.
+
+This timeout means:
+
+```text
+The incoming tray did not reach rx_1 in time.
+```
+
+For a `right` RX job, `rx_1` is `S0`.
+
+For a `left` RX job, `rx_1` is `S1`.
+
+Common causes:
+
+- The transmitting conveyor did not send a tray.
+- The wrong RX direction was selected.
+- The tray stopped before entering this conveyor.
+- The `rx_1` sensor did not detect the tray.
+- The timeout value is too short for the upstream handoff delay.
+
+On expiry:
+
+- Motor is commanded stopped.
+- State becomes `ERROR`.
+- Error text becomes `RX_DETECT_TIMEOUT`.
+
+### RX Done Timeout
+
+Config key:
+
+```text
+rx_done_timeout_ms
+```
+
+Used in state:
+
+```text
+RX_WAIT_FOR_RX2
+```
+
+After `rx_1` detects the incoming tray, the RX motor starts. The conveyor then
+moves the tray until `rx_2` detects it. When `rx_2` detects the tray, RX stops
+immediately and goes to `RX_DONE`.
+
+The timer starts when the RX job enters `RX_WAIT_FOR_RX2`.
+
+This timeout means:
+
+```text
+The tray entered at rx_1, but did not reach rx_2 in time.
+```
+
+For a `right` RX job, `rx_2` is `S1`.
+
+For a `left` RX job, `rx_2` is `S0`.
+
+Common causes:
+
+- The tray jammed between `rx_1` and `rx_2`.
+- The motor did not move after `rx_1` detected.
+- The motor direction is wrong.
+- The `rx_2` sensor did not detect the tray.
+- The timeout value is too short for the conveyor length and speed.
+
+On expiry:
+
+- Motor stops.
+- State becomes `ERROR`.
+- Error text becomes `RX_DONE_TIMEOUT`.
+
+## Timeout Tuning
+
+Set each timeout longer than the normal expected movement time, with some
+margin.
+
+If a timeout is too short:
+
+- Good transfers may fail with false `ERROR` states.
+
+If a timeout is too long:
+
+- Real jams or missed trays take longer to report.
+
+The TX clear timeout may need to be longer than the TX detect timeout if long
+trays take more time to completely clear the handoff sensor.
 
 ## Motor Boundary
 

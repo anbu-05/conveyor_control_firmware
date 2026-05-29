@@ -20,6 +20,8 @@ Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/b
 
 Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
 
+Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
