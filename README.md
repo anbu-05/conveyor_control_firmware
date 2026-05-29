@@ -15,69 +15,24 @@ ESP-IDF starter project for controlling a motor through a Cytron MD30C.
 
 Check your exact ESP32-S3 board pinout before wiring. GPIO7 and GPIO6 must be available on your board.
 
-## Serial Commands
+## Conveyor Direction Reference
 
-Open the ESP-IDF monitor and type commands exactly as shown.
-
-This project is configured for the ESP32-S3 USB Serial/JTAG console, which
-usually appears as `/dev/ttyACM0` on Linux.
+This firmware treats the two physical sensors like this:
 
 ```text
-setmotor M0 128 1
+S0 = left sensor
+S1 = right sensor
 ```
 
-Sets motor `M0` to PWM `128` and direction `1`. Prints:
+`left` and `right` are conveyor-relative directions. When a command says
+`right`, the tray is expected to move from `S0` toward `S1`. When a command
+says `left`, the tray is expected to move from `S1` toward `S0`.
 
-```text
-OK SETMOTOR M0
-```
+## Detailed Docs
 
-```text
-stopmotor M0
-```
-
-Stops only motor `M0`. Prints:
-
-```text
-OK STOPMOTOR M0
-```
-
-```text
-stop
-```
-
-Stops all motors. This is the safety command. Prints:
-
-```text
-OK STOP
-```
-
-```text
-watchsensors on
-```
-
-Starts printing sensor change events. Prints:
-
-```text
-OK WATCHSENSORS ON
-```
-
-```text
-watchsensors off
-```
-
-Stops printing sensor change events. Prints:
-
-```text
-OK WATCHSENSORS OFF
-```
-
-The parser is strict:
-
-- `setmotor` must be lowercase.
-- `M0` must be uppercase.
-- PWM must be from `0` to `255`.
-- Direction must be `0` or `1`.
+- [Serial Debug Commands](docs/serial-debug-commands.md)
+- [MQTT Control Commands](docs/mqtt-control-commands.md)
+- [Conveyor Controller State Machine](docs/conveyor-state-machine.md)
 
 ## Serial Output Format
 
@@ -99,6 +54,15 @@ EVENT SENSOR S1 1 0
 EVENT SENSOR S1 0 1
 ```
 
+Job event examples:
+
+```text
+EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
+EVENT JOB C0 TX_WAIT_FOR_TX2_CLEAR right
+EVENT JOB C0 TX_DONE right
+EVENT JOB C0 IDLE right
+```
+
 Errors:
 
 ```text
@@ -107,6 +71,8 @@ ERR UNKNOWN_MOTOR
 ERR BAD_ARGS
 ERR BAD_PWM
 ERR BAD_DIRECTION
+ERR JOB_QUEUE
+ERR JOB_BUSY
 ```
 
 ESP-IDF boot logs can still appear before `READY conveyor`. A wrapper should
@@ -125,16 +91,17 @@ idf.py flash monitor
 ## Source Layout
 
 - `main/main.c`: app startup, mutex creation, hardware setup calls, task creation.
-- `main/app_state.c`: shared motor/sensor state, console printing, motor lookup.
-- `main/command_task.c`: microrl serial command task and command handling.
-- `main/motor_task.c`: motor PWM/direction setup and output task.
-- `main/sensor_task.c`: sensor GPIO setup and polling task.
+- `main/config/config.h`: hardcoded conveyor ID, MQTT, motor speed, and timeout config.
+- `main/shared/app_state.c`: shared motor/sensor state, console printing, motor lookup.
+- `main/tasks/command_task.c`: microrl serial command task and command handling.
+- `main/tasks/motor_task.c`: motor PWM/direction setup and output task.
+- `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON command parsing, MQTT status task, and feedback publishing.
+- `main/tasks/sensor_task.c`: sensor GPIO setup and polling task.
+- `main/conveyor/conveyor_job.c`: central TX/RX conveyor state machine and job queue setup.
 
 ## Current Limits
 
 - Only one motor, `M0`, is configured.
 - Two binary sensors, `S0` and `S1`, are configured.
-- Position control is not implemented yet.
 - Encoder PCNT reading is not implemented yet.
-- MQTT control is not implemented yet.
 - The motor struct already has fields for future position control work.

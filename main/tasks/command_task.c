@@ -4,7 +4,39 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "conveyor_job.h"
 #include "microrl.h"
+
+static bool parse_job_direction(const char *text, conveyor_direction_t *direction)
+{
+    if (strcmp(text, "left") == 0) {
+        *direction = CONVEYOR_DIR_LEFT;
+        return true;
+    }
+
+    if (strcmp(text, "right") == 0) {
+        *direction = CONVEYOR_DIR_RIGHT;
+        return true;
+    }
+
+    return false;
+}
+
+static void send_job_command(conveyor_cmd_t command, const char *ok_text)
+{
+    if ((command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) &&
+        !conveyor_job_is_idle()) {
+        console_print("ERR JOB_BUSY\r\n");
+        return;
+    }
+
+    if (!conveyor_job_send_command(command)) {
+        console_print("ERR JOB_QUEUE\r\n");
+        return;
+    }
+
+    console_print(ok_text);
+}
 
 /*
  * Dispatches a parsed microrl command to the matching command handler.
@@ -96,18 +128,86 @@ static int execute_command(int argc, const char *const *argv)
     }
 
     if (strcmp(argv[0], "stop") == 0) {
+        conveyor_cmd_t command = {
+            .type = CONVEYOR_CMD_EMERGENCY_STOP,
+            .direction = CONVEYOR_DIR_RIGHT,
+        };
+
         if (argc != 1) {
             console_print("ERR BAD_ARGS\r\n");
             return 0;
         }
 
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        for (int i = 0; i < MOTOR_COUNT; i++) {
-            motors[i].pwm = 0;
-        }
-        xSemaphoreGive(motor_mutex);
+        stop_all_motors();
+        (void)conveyor_job_send_command(command);
 
         console_print("OK STOP\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "jobtx") == 0) {
+        conveyor_cmd_t command;
+
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!parse_job_direction(argv[1], &command.direction)) {
+            console_print("ERR BAD_DIRECTION\r\n");
+            return 0;
+        }
+
+        command.type = CONVEYOR_CMD_START_TX;
+        send_job_command(command, "OK JOBTX\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "jobrx") == 0) {
+        conveyor_cmd_t command;
+
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!parse_job_direction(argv[1], &command.direction)) {
+            console_print("ERR BAD_DIRECTION\r\n");
+            return 0;
+        }
+
+        command.type = CONVEYOR_CMD_START_RX;
+        send_job_command(command, "OK JOBRX\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "estop") == 0) {
+        conveyor_cmd_t command = {
+            .type = CONVEYOR_CMD_EMERGENCY_STOP,
+            .direction = CONVEYOR_DIR_RIGHT,
+        };
+
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        send_job_command(command, "OK ESTOP\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "clearerror") == 0) {
+        conveyor_cmd_t command = {
+            .type = CONVEYOR_CMD_CLEAR_ERROR,
+            .direction = CONVEYOR_DIR_RIGHT,
+        };
+
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        send_job_command(command, "OK CLEARERROR\r\n");
         return 0;
     }
 

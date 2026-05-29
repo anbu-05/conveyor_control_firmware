@@ -8,11 +8,15 @@ Implemented a strict serial command layer using a vendored local `microrl` compo
 
 Added function-level comments in the main app source files and `components/microrl/microrl.c` so future readers can quickly understand each function's job.
 
-Simplified the app source by removing small helper functions that were not pulling their weight in a one-motor version. Command handling now lives in `main/command_task.c`, with `find_motor()` kept in shared state because it connects command motor names to the motor table.
+Simplified the app source by removing small helper functions that were not pulling their weight in a one-motor version. Command handling now lives in `main/tasks/command_task.c`, with `find_motor()` kept in shared state because it connects command motor names to the motor table.
 
 Troubleshooting update: command input now uses `stdin` instead of directly reading `UART_NUM_0`, and the project config uses USB Serial/JTAG as the primary console. This matches `/dev/ttyACM0` on ESP32-S3 boards and avoids monitor write timeouts caused by UART0 GPIO43/44 console input mismatch.
 
 Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task polls them every 20 ms and prints machine-readable event lines when `watchsensors on` is enabled.
+
+Added a central conveyor job state machine for high-level tray transfer jobs. MQTT and microrl can submit TX/RX/emergency/clear-error commands to the same queue, while the state machine owns the active job. DONE states auto-return to `IDLE` after a short report hold.
+
+Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/broker/topic config, `espressif/mqtt` dependency, WiFi/MQTT setup in its own module, JSON high-level command parsing, and feedback publishing. MQTT does not expose raw PWM commands.
 
 Serial output is now token-based for a Python wrapper:
 
@@ -23,27 +27,43 @@ OK STOPMOTOR M0
 OK STOP
 OK WATCHSENSORS ON
 OK WATCHSENSORS OFF
+OK JOBTX
+OK JOBRX
+OK ESTOP
+OK CLEARERROR
 ERR UNKNOWN_COMMAND
 ERR UNKNOWN_MOTOR
 ERR BAD_ARGS
 ERR BAD_PWM
 ERR BAD_DIRECTION
+ERR JOB_QUEUE
+ERR JOB_BUSY
 EVENT SENSOR S0 1 0
+EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
 ```
 
 ## Files
 
 - `CMakeLists.txt`: Top-level ESP-IDF project file.
 - `main/CMakeLists.txt`: Main component build file. Depends on ESP-IDF GPIO, LEDC, and `microrl`.
+- `main/idf_component.yml`: ESP-IDF component dependency manifest for `espressif/mqtt`.
 - `main/main.c`: ESP-IDF app startup, mutex creation, setup calls, task creation, and `READY conveyor`.
-- `main/app_state.h`: Shared structs, constants, globals, and task/setup prototypes.
-- `main/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
-- `main/command_task.c`: Strict command parser and `microrl_task`.
-- `main/motor_task.c`: LEDC/direction GPIO setup and `motor_controller_task`.
-- `main/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
+- `main/config/config.h`: Hardcoded conveyor ID, MQTT, open-loop speed, task, and timeout config.
+- `main/shared/app_state.h`: Shared structs, constants, globals, and task/setup prototypes.
+- `main/shared/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
+- `main/tasks/command_task.c`: Strict command parser and `microrl_task`.
+- `main/tasks/motor_task.c`: LEDC/direction GPIO setup and `motor_controller_task`.
+- `main/tasks/mqtt_task.h`: MQTT setup, status task, and publishing API.
+- `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON parsing, command queue submission, and status publishing.
+- `main/tasks/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
+- `main/conveyor/conveyor_job.h`: Conveyor command, direction, state, status, setup, and task declarations.
+- `main/conveyor/conveyor_job.c`: Central TX/RX conveyor transfer state machine and job queue setup.
 - `components/microrl/`: Small vendored microrl-style command parser used by this app.
 - `docs/architecture.mmd`: Mermaid chart of the current command and motor-control flow.
 - `docs/code-structure.mmd`: Mermaid chart of files, functions, callbacks, and shared state.
+- `docs/serial-debug-commands.md`: Detailed microrl command reference.
+- `docs/mqtt-control-commands.md`: Detailed MQTT topic, payload, and feedback reference.
+- `docs/conveyor-state-machine.md`: Detailed TX/RX state machine reference.
 - `README.md`: Human-facing usage, wiring, commands, and build notes.
 - `sdkconfig.defaults`: Default log level config.
 - `project.md`: Project status notes for future chats.
@@ -93,6 +113,12 @@ stopmotor M0
 stop
 watchsensors on
 watchsensors off
+jobtx left
+jobtx right
+jobrx left
+jobrx right
+estop
+clearerror
 ```
 
 - `setmotor M0 128 1`: sets `M0.pwm = 128` and `M0.direction = 1`.
@@ -100,23 +126,57 @@ watchsensors off
 - `stop`: sets PWM to `0` for all motors.
 - `watchsensors on`: enables sensor event printing.
 - `watchsensors off`: disables sensor event printing.
+- `jobtx left/right`: submits a transmitter job to the conveyor state machine.
+- `jobrx left/right`: submits a receiver job to the conveyor state machine.
+- `estop`: stops the active conveyor job and motor immediately.
+- `clearerror`: returns `ERROR` or `ESTOP` to `IDLE`.
 
 Invalid command names, motor names, argument counts, PWM values, or direction values are rejected.
 
+MQTT commands are high-level JSON only:
+
+```json
+{"type":"tx","direction":"right"}
+{"type":"tx","direction":"left"}
+{"type":"rx","direction":"right"}
+{"type":"rx","direction":"left"}
+{"type":"emergency_stop"}
+{"type":"clear_error"}
+```
+
+MQTT defaults:
+
+- WiFi SSID: `thrd_warehouse`
+- Broker URI: `mqtt://192.168.1.220`
+- Conveyor ID: `C0`
+- Command topic: `conveyor/C0/cmd`
+- Emergency topic: `conveyor/C0/emergency`
+- Shared emergency topic: `conveyor/all/emergency`
+- Feedback topic: `conveyor/C0/feedback`
+
 ## Architecture
 
-- `main/main.c`: creates shared mutexes, configures console/PWM/sensors, starts tasks.
+- `main/main.c`: creates shared mutexes, configures console/PWM/sensors/job queue, starts tasks.
 - `microrl_task`: reads console stdin input and edits shared state through command handlers.
+- `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
+- `mqtt_status_task`: publishes periodic conveyor status when MQTT status output is enabled.
+- `conveyor_job_task`: owns the TX/RX state machine and submits move/stop requests to the motor state.
 - `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
 - `console_mutex`: keeps command responses and sensor event lines from interleaving.
 
-Future threads can edit the same motor struct:
+Current high-level job states:
 
-- PCNT reader task: read encoder count and write `motor.position`.
-- MQTT task: remote commands that edit motor fields.
-- PD/PID task: read `position` and `target_pos`, then write `pwm` and `direction`.
+- `IDLE`
+- `TX_WAIT_FOR_TX2_DETECT`
+- `TX_WAIT_FOR_TX2_CLEAR`
+- `RX_WAIT_FOR_RX1`
+- `RX_WAIT_FOR_RX2`
+- `TX_DONE`
+- `RX_DONE`
+- `ERROR`
+- `ESTOP`
 
 ## Assumptions
 
@@ -127,6 +187,9 @@ Future threads can edit the same motor struct:
 - The MD30C `D` pin is connected to GPIO6.
 - Sensor `S0` is connected to GPIO4 with an external pullup.
 - Sensor `S1` is connected to GPIO5 with an external pullup.
+- `S0` is treated as the left sensor.
+- `S1` is treated as the right sensor.
+- Sensors are active low: GPIO `0` means tray detected.
 - Commands are strict and literal.
 - Sensor output is binary. Both 1 to 0 and 0 to 1 transitions are printed when watching is enabled.
 - PCNT will be handled later by a task that reads PCNT count and updates `motor.position`.

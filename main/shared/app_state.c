@@ -94,3 +94,27 @@ motor_t *find_motor(const char *name)
 
     return NULL;
 }
+
+void move_main_motor(int direction, int pwm)
+{
+    if (pwm < 0) {
+        pwm = 0;
+    }
+    if (pwm > MOTOR_PWM_MAX) {
+        pwm = MOTOR_PWM_MAX;
+    }
+
+    xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    motors[0].direction = direction;
+    motors[0].pwm = pwm;
+    xSemaphoreGive(motor_mutex);
+}
+
+void stop_all_motors(void)
+{
+    xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        motors[i].pwm = 0;
+    }
+    xSemaphoreGive(motor_mutex);
+}

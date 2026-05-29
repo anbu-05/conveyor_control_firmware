@@ -1,7 +1,10 @@
 #include <stdio.h>
 
 #include "app_state.h"
+#include "config.h"
+#include "conveyor_job.h"
 #include "esp_log.h"
+#include "mqtt_task.h"
 
 static const char *TAG = "conveyor";
 
@@ -38,10 +41,19 @@ void app_main(void)
     configure_console();
     configure_pwm();
     configure_sensors();
+    configure_conveyor_job();
 
+    xTaskCreate(conveyor_job_task, "conveyor_job", CONVEYOR_JOB_TASK_STACK_SIZE, NULL, CONVEYOR_JOB_TASK_PRIORITY, NULL);
     xTaskCreate(microrl_task, "microrl", MICRORL_TASK_STACK_SIZE, NULL, 5, NULL);
     xTaskCreate(motor_controller_task, "motor_ctrl_M0", MOTOR_TASK_STACK_SIZE, &motors[0], 5, NULL);
     xTaskCreate(sensor_reader_task, "sensor_reader", SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
+
+#if CONVEYOR_MQTT_ENABLED
+    configure_mqtt();
+#if CONVEYOR_MQTT_STATUS_ENABLED
+    xTaskCreate(mqtt_status_task, "mqtt_status", CONVEYOR_MQTT_STATUS_TASK_STACK_SIZE, NULL, CONVEYOR_MQTT_STATUS_TASK_PRIORITY, NULL);
+#endif
+#endif
 
     console_print("READY conveyor\r\n");
 }

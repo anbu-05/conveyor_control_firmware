@@ -48,6 +48,8 @@ extern sensor_t sensors[SENSOR_COUNT];
 void console_print(const char *text);
 void console_printf(const char *format, ...);
 motor_t *find_motor(const char *name);
+void move_main_motor(int direction, int pwm);
+void stop_all_motors(void);
 
 void configure_pwm(void);
 void configure_sensors(void);
