@@ -22,7 +22,9 @@ Speed control now uses an acceleration-style planned speed. P output changes `M0
 
 Tuning update: `CONVEYOR_SPEED_ACCEL_STEP_COUNTS` caps how much `planned_speed` can change during each 20 ms motor PID tick. This prevents large speed commands like `setspeed M0 10000` from creating a huge first acceleration step, while preserving gentle deceleration toward zero.
 
-Conveyor jobs now only request fixed-direction run/stop. `start_main_motor()` uses `CONVEYOR_MOTOR_FORWARD_DIRECTION` and runtime `run_speed_counts_per_sec`; `stop_all_motors()` stops immediately and disables speed control.
+Conveyor jobs now only request fixed-direction run/stop for a named motor. `start_motor("M0")` uses `CONVEYOR_MOTOR_FORWARD_DIRECTION` and runtime `run_speed_counts_per_sec`. Normal TX/RX completion uses `stop_motor("M0")`, which sets target speed to zero and lets `motor_pid_task` ramp down. Errors, emergency stops, and explicit serial stops still use immediate stop behavior.
+
+MQTT `tx`/`rx` commands do not carry speed. They only queue high-level jobs, so job motor speed always comes from runtime config `run_speed_counts_per_sec`. If serial `setspeed M0 <value>` feels correct but MQTT jobs crawl, check `getconfig run_speed_counts_per_sec` and set it with `setconfig run_speed_counts_per_sec <value>`.
 
 Added a central conveyor job state machine for high-level tray transfer jobs. MQTT and microrl can submit TX/RX/emergency/clear-error commands to the same queue, while the state machine owns the active job. DONE states auto-return to `IDLE` after a short report hold.
 

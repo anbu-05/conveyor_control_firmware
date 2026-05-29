@@ -107,8 +107,14 @@ motor_t *find_motor(const char *name)
     return NULL;
 }
 
-void move_main_motor(int direction, int pwm)
+bool move_motor(const char *name, int direction, int pwm)
 {
+    motor_t *motor = find_motor(name);
+
+    if (motor == NULL) {
+        return false;
+    }
+
     if (pwm < 0) {
         pwm = 0;
     }
@@ -117,17 +123,23 @@ void move_main_motor(int direction, int pwm)
     }
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    motors[0].direction = direction;
-    motors[0].pwm = pwm;
-    motors[0].target_speed = 0;
-    motors[0].planned_speed = 0;
-    motors[0].speed_control = false;
+    motor->direction = direction;
+    motor->pwm = pwm;
+    motor->target_speed = 0;
+    motor->planned_speed = 0;
+    motor->speed_control = false;
     xSemaphoreGive(motor_mutex);
+    return true;
 }
 
-void start_main_motor(void)
+bool start_motor(const char *name)
 {
+    motor_t *motor = find_motor(name);
     int speed = runtime_config_run_speed_counts_per_sec();
+
+    if (motor == NULL) {
+        return false;
+    }
 
     if (speed < 0) {
         speed = -speed;
@@ -135,18 +147,34 @@ void start_main_motor(void)
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     if (CONVEYOR_MOTOR_FORWARD_DIRECTION == 0) {
-        if (motors[0].target_speed > 0) {
-            motors[0].planned_speed = 0;
+        if (motor->target_speed > 0) {
+            motor->planned_speed = 0;
         }
-        motors[0].target_speed = -speed;
+        motor->target_speed = -speed;
     } else {
-        if (motors[0].target_speed < 0) {
-            motors[0].planned_speed = 0;
+        if (motor->target_speed < 0) {
+            motor->planned_speed = 0;
         }
-        motors[0].target_speed = speed;
+        motor->target_speed = speed;
     }
-    motors[0].speed_control = true;
+    motor->speed_control = true;
     xSemaphoreGive(motor_mutex);
+    return true;
+}
+
+bool stop_motor(const char *name)
+{
+    motor_t *motor = find_motor(name);
+
+    if (motor == NULL) {
+        return false;
+    }
+
+    xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    motor->target_speed = 0;
+    motor->speed_control = true;
+    xSemaphoreGive(motor_mutex);
+    return true;
 }
 
 void stop_all_motors(void)

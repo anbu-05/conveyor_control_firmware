@@ -444,13 +444,16 @@ The state machine does not write GPIO or LEDC hardware directly.
 It calls shared motor helpers:
 
 ```text
-start_main_motor()
+start_motor("M0")
+stop_motor("M0")
 stop_all_motors()
 ```
 
-`start_main_motor()` uses the fixed `CONVEYOR_MOTOR_FORWARD_DIRECTION` and the
+`start_motor("M0")` uses the fixed `CONVEYOR_MOTOR_FORWARD_DIRECTION` and the
 runtime `run_speed_counts_per_sec` value. The state machine only requests
-run/stop.
+run/stop for `M0`. Normal TX/RX completion uses `stop_motor("M0")` so the
+motor PID task ramps target speed to zero. Errors and emergency stops still
+use `stop_all_motors()` for an immediate stop.
 
 The `motor_pid_task` reads encoder PCNT, calculates speed, updates the simple
 speed controller, and writes the actual direction GPIO and LEDC PWM hardware.

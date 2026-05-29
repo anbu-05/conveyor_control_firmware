@@ -17,7 +17,7 @@
 #define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"   /* Tray-present status topic for this conveyor. */
 
 #define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
-#define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 100         /* Default closed-loop job speed in encoder counts/sec. */
+#define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */
 #define CONVEYOR_SPEED_KP_MILLI 50                    /* Default speed P gain scaled by 1000; 50 means 0.050. */
 #define CONVEYOR_SPEED_PWM_SCALE_MILLI 100            /* Planned-speed to PWM scale; pwm = planned_speed * value / 1000. */
 #define CONVEYOR_SPEED_ACCEL_STEP_COUNTS 25           /* Max planned_speed change per 20 ms motor PID tick. */

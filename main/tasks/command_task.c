@@ -211,13 +211,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        motor->pwm = (int)pwm;
-        motor->direction = (int)direction;
-        motor->target_speed = 0;
-        motor->planned_speed = 0;
-        motor->speed_control = false;
-        xSemaphoreGive(motor_mutex);
+        (void)move_motor(motor->name, (int)direction, (int)pwm);
 
         console_printf("OK SETMOTOR %s\r\n", motor->name);
         return 0;
@@ -284,12 +278,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        motor->pwm = 0;
-        motor->target_speed = 0;
-        motor->planned_speed = 0;
-        motor->speed_control = false;
-        xSemaphoreGive(motor_mutex);
+        (void)move_motor(motor->name, 0, 0);
 
         console_printf("OK STOPMOTOR %s\r\n", motor->name);
         return 0;

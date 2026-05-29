@@ -165,7 +165,7 @@ static void start_tx(void)
     }
 
     current_status.error[0] = '\0';
-    start_main_motor();
+    (void)start_motor("M0");
 
     if (tray_detected(tx1_sensor())) {
         set_state(CONVEYOR_STATE_TX_WAIT_FOR_TX1_CLEAR);
@@ -248,7 +248,7 @@ static void update_state(void)
     if (current_status.state == CONVEYOR_STATE_TX_WAIT_FOR_TX1_CLEAR) {
         sensor = tx1_sensor();
         if (!tray_detected(sensor)) {
-            stop_all_motors();
+            (void)stop_motor("M0");
             set_state(CONVEYOR_STATE_TX_DONE);
         } else if (timeout_expired(runtime_config_tx_clear_timeout_ms())) {
             set_error("TX_CLEAR_TIMEOUT");
@@ -259,7 +259,7 @@ static void update_state(void)
     if (current_status.state == CONVEYOR_STATE_RX_WAIT_FOR_RX0) {
         sensor = rx0_sensor();
         if (tray_detected(sensor)) {
-            start_main_motor();
+            (void)start_motor("M0");
             set_state(CONVEYOR_STATE_RX_WAIT_FOR_RX1);
         } else if (timeout_expired(runtime_config_rx_detect_timeout_ms())) {
             set_error("RX_DETECT_TIMEOUT");
@@ -272,7 +272,7 @@ static void update_state(void)
         if (!conveyor_job_has_tray()) {
             set_error("RX_LOST_TRAY");
         } else if (tray_detected(sensor)) {
-            stop_all_motors();
+            (void)stop_motor("M0");
             set_state(CONVEYOR_STATE_RX_DONE);
         } else if (timeout_expired(runtime_config_rx_done_timeout_ms())) {
             set_error("RX_DONE_TIMEOUT");
