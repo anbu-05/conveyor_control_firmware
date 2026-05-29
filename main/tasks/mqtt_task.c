@@ -18,6 +18,8 @@ static const char *TAG = "ConveyorMQTT";
 
 static esp_mqtt_client_handle_t mqtt_client;
 static volatile bool mqtt_connected;
+static bool tray_status_published;
+static bool last_has_tray;
 
 bool mqtt_task_is_connected(void)
 {
@@ -31,6 +33,34 @@ static void publish_text(const char *text)
     }
 
     esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_FEEDBACK, text, 0, 0, 0);
+}
+
+static void publish_tray_status(bool force)
+{
+    conveyor_tray_status_t status;
+    char message[128];
+
+    if (!mqtt_connected || mqtt_client == NULL) {
+        return;
+    }
+
+    conveyor_job_get_tray_status(&status);
+
+    if (!force && tray_status_published && status.has_tray == last_has_tray) {
+        return;
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "{\"id\":\"%s\",\"has_tray\":%s,\"s0\":%d,\"s1\":%d}",
+             CONVEYOR_ID,
+             status.has_tray ? "true" : "false",
+             status.s0,
+             status.s1);
+
+    esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_TRAY, message, 0, 0, 0);
+    tray_status_published = true;
+    last_has_tray = status.has_tray;
 }
 
 void mqtt_publish_job_status(const conveyor_status_t *status)
@@ -90,6 +120,11 @@ static void handle_command_message(const char *message)
             return;
         }
 
+        if (!conveyor_job_has_tray()) {
+            publish_bad_command("NO_TRAY");
+            return;
+        }
+
         command.type = CONVEYOR_CMD_START_TX;
         if (!conveyor_job_send_command(command)) {
             publish_bad_command("QUEUE_FULL");
@@ -99,6 +134,11 @@ static void handle_command_message(const char *message)
 
     if (strcmp(message, "{\"type\":\"rx\"}") == 0) {
         if (reject_if_busy()) {
+            return;
+        }
+
+        if (conveyor_job_has_tray()) {
+            publish_bad_command("TRAY_PRESENT");
             return;
         }
 
@@ -175,6 +215,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CMD, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_EMERGENCY, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY, 0);
+        publish_tray_status(true);
         ESP_LOGI(TAG, "MQTT connected");
         return;
     }
@@ -252,13 +293,18 @@ static void mqtt_init(void)
 
 void mqtt_status_task(void *arg)
 {
+#if CONVEYOR_MQTT_STATUS_ENABLED
     conveyor_status_t status;
+#endif
 
     (void)arg;
 
     while (1) {
+#if CONVEYOR_MQTT_STATUS_ENABLED
         conveyor_job_get_status(&status);
         mqtt_publish_job_status(&status);
+#endif
+        publish_tray_status(false);
         vTaskDelay(pdMS_TO_TICKS(runtime_config_mqtt_status_period_ms()));
     }
 }

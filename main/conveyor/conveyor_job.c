@@ -64,6 +64,22 @@ void conveyor_job_get_status(conveyor_status_t *status)
     *status = current_status;
 }
 
+bool conveyor_job_has_tray(void)
+{
+    return sensors[0].value == 0 || sensors[1].value == 0;
+}
+
+void conveyor_job_get_tray_status(conveyor_tray_status_t *status)
+{
+    if (status == NULL) {
+        return;
+    }
+
+    status->s0 = sensors[0].value;
+    status->s1 = sensors[1].value;
+    status->has_tray = conveyor_job_has_tray();
+}
+
 bool conveyor_job_send_command(conveyor_cmd_t command)
 {
     if (conveyor_cmd_queue == NULL) {
@@ -140,6 +156,11 @@ static void start_tx(void)
         return;
     }
 
+    if (!conveyor_job_has_tray()) {
+        console_print("ERR NO_TRAY\r\n");
+        return;
+    }
+
     current_status.error[0] = '\0';
     move_main_motor(CONVEYOR_MOTOR_FORWARD_DIRECTION, runtime_config_run_pwm());
 
@@ -154,6 +175,11 @@ static void start_rx(void)
 {
     if (current_status.state != CONVEYOR_STATE_IDLE) {
         console_print("ERR JOB_BUSY\r\n");
+        return;
+    }
+
+    if (conveyor_job_has_tray()) {
+        console_print("ERR TRAY_PRESENT\r\n");
         return;
     }
 
@@ -206,7 +232,9 @@ static void update_state(void)
 
     if (current_status.state == CONVEYOR_STATE_TX_WAIT_FOR_TX1_DETECT) {
         sensor = tx1_sensor();
-        if (tray_detected(sensor)) {
+        if (!conveyor_job_has_tray()) {
+            set_error("TX_LOST_TRAY");
+        } else if (tray_detected(sensor)) {
             set_state(CONVEYOR_STATE_TX_WAIT_FOR_TX1_CLEAR);
         } else if (timeout_expired(runtime_config_tx_detect_timeout_ms())) {
             set_error("TX_DETECT_TIMEOUT");
@@ -238,7 +266,9 @@ static void update_state(void)
 
     if (current_status.state == CONVEYOR_STATE_RX_WAIT_FOR_RX1) {
         sensor = rx1_sensor();
-        if (tray_detected(sensor)) {
+        if (!conveyor_job_has_tray()) {
+            set_error("RX_LOST_TRAY");
+        } else if (tray_detected(sensor)) {
             stop_all_motors();
             set_state(CONVEYOR_STATE_RX_DONE);
         } else if (timeout_expired(runtime_config_rx_done_timeout_ms())) {

@@ -34,11 +34,19 @@ typedef struct {
     int s1;
 } conveyor_status_t;
 
+typedef struct {
+    bool has_tray;
+    int s0;
+    int s1;
+} conveyor_tray_status_t;
+
 void configure_conveyor_job(void);
 void conveyor_job_task(void *arg);
 bool conveyor_job_send_command(conveyor_cmd_t command);
 bool conveyor_job_is_idle(void);
+bool conveyor_job_has_tray(void);
 void conveyor_job_get_status(conveyor_status_t *status);
+void conveyor_job_get_tray_status(conveyor_tray_status_t *status);
 const char *conveyor_state_name(conveyor_state_t state);
 
 #endif

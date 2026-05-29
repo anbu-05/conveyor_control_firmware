@@ -14,6 +14,7 @@
 #define CONVEYOR_MQTT_TOPIC_EMERGENCY "conveyor/C0/emergency"
 #define CONVEYOR_MQTT_TOPIC_FEEDBACK "conveyor/C0/feedback"
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency"
+#define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"
 
 #define CONVEYOR_RUN_PWM 64
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1

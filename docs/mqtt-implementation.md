@@ -19,8 +19,9 @@ CONVEYOR_MQTT_STATUS_ENABLED
 If `CONVEYOR_MQTT_ENABLED` is `0`, `main.c` does not call `configure_mqtt()`
 and does not create `mqtt_status_task`.
 
-If `CONVEYOR_MQTT_STATUS_ENABLED` is `0`, MQTT can still receive commands, but
-the periodic status task is not created.
+If `CONVEYOR_MQTT_STATUS_ENABLED` is `0`, MQTT can still receive commands.
+Periodic job-status publishing is skipped, but `mqtt_status_task` is still
+created so tray-presence changes can be published.
 
 ## Hardcoded MQTT Config
 
@@ -34,6 +35,7 @@ CONVEYOR_MQTT_TOPIC_CMD
 CONVEYOR_MQTT_TOPIC_EMERGENCY
 CONVEYOR_MQTT_TOPIC_FEEDBACK
 CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY
+CONVEYOR_MQTT_TOPIC_TRAY
 ```
 
 The MQTT client ID is built from the conveyor ID:
@@ -136,6 +138,12 @@ All conveyors emergency:
 conveyor/all/emergency
 ```
 
+Tray presence:
+
+```text
+conveyor/C0/tray
+```
+
 ## Accepted Payloads
 
 The parser is deliberately simple and strict. It uses exact `strcmp()` checks,
@@ -188,7 +196,15 @@ The conveyor job task later receives the command from the FreeRTOS queue and
 owns all state transitions, sensor checks, timeouts, and motor requests.
 
 TX and RX commands are rejected before queueing if the conveyor is not `IDLE`.
-Emergency stop and clear error are still sent to the queue.
+TX is also rejected if no tray is present. RX is rejected if a tray is already
+present. Emergency stop and clear error are still sent to the queue.
+
+MQTT precondition errors:
+
+```text
+NO_TRAY
+TRAY_PRESENT
+```
 
 ## Feedback Publishing
 
@@ -227,6 +243,39 @@ Command parsing errors are also published to the feedback topic:
 {"id":"C0","state":"ERROR","error":"UNKNOWN_COMMAND"}
 ```
 
+## Tray Publishing
+
+Tray presence is derived by the conveyor job layer:
+
+```text
+has_tray = S0 detected OR S1 detected
+```
+
+The tray topic is:
+
+```text
+conveyor/C0/tray
+```
+
+Payload:
+
+```json
+{"id":"C0","has_tray":true,"s0":0,"s1":1}
+```
+
+Publishing rules:
+
+- Publish once when MQTT connects.
+- Publish from `mqtt_status_task` only when `has_tray` changes.
+- Do not publish a new tray message when raw `S0/S1` values change but
+  `has_tray` stays the same.
+- Raw sensor `0` means tray detected.
+- Raw sensor `1` means no tray detected.
+
+This is separate from periodic job-status feedback. The tray topic is
+change-driven, while job status can still be periodic when
+`CONVEYOR_MQTT_STATUS_ENABLED` is enabled.
+
 ## Error Feedback
 
 MQTT publishes these parser/queue errors:
@@ -236,6 +285,8 @@ UNKNOWN_COMMAND
 BAD_EMERGENCY
 JOB_BUSY
 QUEUE_FULL
+NO_TRAY
+TRAY_PRESENT
 ```
 
 These are MQTT command handling errors. They are not the same as conveyor
@@ -250,3 +301,4 @@ state-machine errors like `TX_DETECT_TIMEOUT` or `RX_DONE_TIMEOUT`.
 - MQTT does not expose raw `setmotor`, `stopmotor`, or runtime config commands.
 - MQTT does not change `run_pwm` or timeout settings.
 - MQTT status publish period is runtime-configurable through serial only.
+- MQTT tray presence is change-driven and does not publish continuously.

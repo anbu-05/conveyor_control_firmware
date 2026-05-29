@@ -83,9 +83,11 @@ flowchart TD
     MicrorlTask --> ExecuteCommand["execute_command()"]
     ExecuteCommand --> LowLevelSerial["setmotor/stopmotor/stop/watchsensors"]
     ExecuteCommand --> JobSerial["jobtx/jobrx/estop/clearerror"]
+    ExecuteCommand --> TraySerial["gettray"]
     ExecuteCommand --> ConfigSerial["getconfig/setconfig/resetconfig"]
     LowLevelSerial --> MotorsArray
     JobSerial --> SendJobCommand["conveyor_job_send_command()"]
+    TraySerial --> ConveyorJobC
     ConfigSerial --> RuntimeConfigC
 
     ConveyorJobC --> ConfigureJob
@@ -94,6 +96,7 @@ flowchart TD
     ConveyorJobTask --> JobQueue
     ConveyorJobTask --> JobState["TX/RX/ERROR/ESTOP state machine"]
     JobState --> SensorsArray
+    JobState --> TrayStatus["derived has_tray status"]
     JobState --> MoveMainMotor
     JobState --> StopAllMotors
     JobState --> RuntimeConfigC
@@ -109,6 +112,7 @@ flowchart TD
     MqttTaskC --> MqttStatusTask["mqtt_status_task()"]
     MqttStatusTask --> RuntimeConfigC
     MqttStatusTask --> MqttFeedback["mqtt_publish_job_status()"]
+    MqttStatusTask --> TrayTopic["publish conveyor/C0/tray on has_tray change"]
 
     SensorTaskC --> ConfigureSensors
     SensorTaskC --> SensorReaderTask["sensor_reader_task()"]

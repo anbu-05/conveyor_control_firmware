@@ -22,6 +22,11 @@ GPIO 0 = tray detected
 GPIO 1 = no tray
 ```
 
+The physical distance between `S0` and `S1` is smaller than the tray length.
+Because of that, a tray on this conveyor should always trigger `S0`, `S1`, or
+both. There is no valid physical state where a tray is on the conveyor and
+both sensors are clear.
+
 ## Sensor Reference
 
 ```text
@@ -36,6 +41,15 @@ tx1 = S1
 rx0 = S0
 rx1 = S1
 ```
+
+Derived tray presence:
+
+```text
+has_tray = S0 detected OR S1 detected
+```
+
+This derived status is owned by the conveyor job layer so both MQTT and serial
+debug commands read the same interpretation.
 
 ## Commands
 
@@ -75,6 +89,13 @@ Start condition:
 
 - State must be `IDLE`.
 - Command must be `CONVEYOR_CMD_START_TX`.
+- `has_tray` must be true.
+
+If TX is requested with no tray present, the command is rejected:
+
+```text
+ERR NO_TRAY
+```
 
 Flow:
 
@@ -108,6 +129,13 @@ Start condition:
 
 - State must be `IDLE`.
 - Command must be `CONVEYOR_CMD_START_RX`.
+- `has_tray` must be false.
+
+If RX is requested while a tray is already present, the command is rejected:
+
+```text
+ERR TRAY_PRESENT
+```
 
 Flow:
 
@@ -161,6 +189,30 @@ Effect:
 
 - Clears the stored error text.
 - Returns state to `IDLE`.
+
+## Lost Tray Errors
+
+The tray-length assumption lets the state machine detect some faults before a
+normal timeout expires.
+
+During TX:
+
+- In `TX_WAIT_FOR_TX1_DETECT`, the conveyor expects the tray to stay visible
+  on at least one sensor until `tx1` detects.
+- If `has_tray` becomes false first, the motor stops and state becomes
+  `ERROR`.
+- Error text becomes `TX_LOST_TRAY`.
+
+During RX:
+
+- In `RX_WAIT_FOR_RX1`, the conveyor has already seen the tray at `rx0`.
+- The tray should stay visible on at least one sensor until `rx1` detects.
+- If `has_tray` becomes false first, the motor stops and state becomes
+  `ERROR`.
+- Error text becomes `RX_LOST_TRAY`.
+
+`TX_WAIT_FOR_TX1_CLEAR` is different. In that state, `tx1` clearing is the
+normal TX completion condition.
 
 ## Timeouts
 
@@ -217,7 +269,6 @@ For every TX job, `tx1` is `S1`.
 
 Common causes:
 
-- There was no tray on the conveyor.
 - The motor did not move.
 - The fixed motor direction is wrong for this wiring.
 - The tray is jammed before reaching `tx1`.
@@ -229,6 +280,9 @@ On expiry:
 - Motor stops.
 - State becomes `ERROR`.
 - Error text becomes `TX_DETECT_TIMEOUT`.
+
+If both sensors clear before `tx1` detects, the state machine reports
+`TX_LOST_TRAY` instead of waiting for this timeout.
 
 ### TX Clear Timeout
 
@@ -359,6 +413,9 @@ On expiry:
 - Motor stops.
 - State becomes `ERROR`.
 - Error text becomes `RX_DONE_TIMEOUT`.
+
+If both sensors clear before `rx1` detects, the state machine reports
+`RX_LOST_TRAY` instead of waiting for this timeout.
 
 ## Timeout Tuning
 

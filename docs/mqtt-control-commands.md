@@ -22,6 +22,7 @@ Command topic: conveyor/C0/cmd
 Emergency topic: conveyor/C0/emergency
 All-conveyors emergency topic: conveyor/all/emergency
 Feedback topic: conveyor/C0/feedback
+Tray topic: conveyor/C0/tray
 ```
 
 The MQTT status publish period defaults to `CONVEYOR_MQTT_STATUS_PERIOD_MS`.
@@ -41,7 +42,11 @@ tx0 = S0
 tx1 = S1
 rx0 = S0
 rx1 = S1
+has_tray = S0 detected OR S1 detected
 ```
+
+The distance between `S0` and `S1` is smaller than the tray length. If a tray
+is on the conveyor, at least one sensor should be detecting it.
 
 ## Command Topic
 
@@ -62,6 +67,7 @@ Payload:
 Effect:
 
 - Starts a transmitter job if the conveyor is `IDLE`.
+- Rejected with `NO_TRAY` if neither sensor detects a tray.
 - Moves the tray from `S0` toward `S1`.
 - The state machine applies the TX stop rule using `tx1`.
 
@@ -76,6 +82,7 @@ Payload:
 Effect:
 
 - Arms a receiver job if the conveyor is `IDLE`.
+- Rejected with `TRAY_PRESENT` if a tray is already on this conveyor.
 - The motor stays stopped until `rx0` detects a tray.
 - When `rx0` detects, the conveyor moves from `S0` toward `S1`.
 - The motor stops when `rx1` detects the tray.
@@ -162,6 +169,40 @@ Bad command example:
 {"id":"C0","state":"ERROR","error":"UNKNOWN_COMMAND"}
 ```
 
+Other command error values include:
+
+```text
+JOB_BUSY
+QUEUE_FULL
+NO_TRAY
+TRAY_PRESENT
+BAD_EMERGENCY
+```
+
+## Tray Topic
+
+Tray presence is published to:
+
+```text
+conveyor/C0/tray
+```
+
+Payload:
+
+```json
+{"id":"C0","has_tray":true,"s0":0,"s1":1}
+```
+
+Rules:
+
+- Published once when MQTT connects.
+- Published again only when `has_tray` changes.
+- Moving from only `S0` active to both sensors active does not publish a new
+  tray message if `has_tray` stays `true`.
+- `s0` and `s1` are raw GPIO readings.
+- Raw sensor `0` means tray detected.
+- Raw sensor `1` means no tray detected.
+
 ## Parser Notes
 
 The current JSON parser is intentionally simple and literal. It checks for
@@ -177,5 +218,5 @@ exact compact payloads like:
 Whitespace inside JSON fields is not currently handled by a real JSON parser.
 Use compact payloads exactly like the examples above.
 
-Unknown command types, full queues, and busy state publish an error message to
-the feedback topic.
+Unknown command types, full queues, busy state, and tray precondition failures
+publish an error message to the feedback topic.

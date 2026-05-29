@@ -40,6 +40,19 @@ rx0 = S0
 rx1 = S1
 ```
 
+The sensor spacing is smaller than the tray length, so a tray on the conveyor
+always triggers `S0`, `S1`, or both. The firmware derives tray presence as:
+
+```text
+has_tray = S0 detected OR S1 detected
+```
+
+MQTT publishes tray-presence changes on:
+
+```text
+conveyor/C0/tray
+```
+
 ## Detailed Docs
 
 - [Serial Debug Commands](docs/serial-debug-commands.md)
@@ -86,6 +99,8 @@ ERR BAD_PWM
 ERR BAD_DIRECTION
 ERR JOB_QUEUE
 ERR JOB_BUSY
+ERR NO_TRAY
+ERR TRAY_PRESENT
 ```
 
 ESP-IDF boot logs can still appear before `READY conveyor`. A wrapper should

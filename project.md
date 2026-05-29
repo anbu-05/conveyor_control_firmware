@@ -26,6 +26,8 @@ Removed the old conveyor `left`/`right` job convention. The conveyor now always 
 
 Added `docs/mqtt-implementation.md` with MQTT startup flow, compile-time switches, exact parser behavior, queue handoff, feedback publishing, runtime status period behavior, and current MQTT limits.
 
+Added central tray-presence status based on the physical assumption that tray length is greater than the distance between `S0` and `S1`. `has_tray` is true when either sensor detects a tray. MQTT publishes change-driven tray status on `conveyor/C0/tray`, and serial debug exposes `gettray`.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
@@ -35,6 +37,7 @@ OK STOPMOTOR M0
 OK STOP
 OK WATCHSENSORS ON
 OK WATCHSENSORS OFF
+TRAY C0 1 0 1
 OK JOBTX
 OK JOBRX
 OK ESTOP
@@ -46,6 +49,8 @@ ERR BAD_PWM
 ERR BAD_DIRECTION
 ERR JOB_QUEUE
 ERR JOB_BUSY
+ERR NO_TRAY
+ERR TRAY_PRESENT
 ERR UNKNOWN_CONFIG
 ERR BAD_VALUE
 ERR CONFIG_BUSY
@@ -129,6 +134,7 @@ stopmotor M0
 stop
 watchsensors on
 watchsensors off
+gettray
 getconfig
 getconfig run_pwm
 setconfig run_pwm 140
@@ -144,6 +150,7 @@ clearerror
 - `stop`: sets PWM to `0` for all motors.
 - `watchsensors on`: enables sensor event printing.
 - `watchsensors off`: disables sensor event printing.
+- `gettray`: prints derived tray presence and raw `S0/S1` values.
 - `getconfig`: prints all editable runtime config values.
 - `getconfig run_pwm`: prints one editable runtime config value.
 - `setconfig run_pwm 140`: validates, saves, and applies a runtime config value.
@@ -154,6 +161,10 @@ clearerror
 - `clearerror`: returns `ERROR` or `ESTOP` to `IDLE`.
 
 Invalid command names, motor names, argument counts, PWM values, direct motor direction values, config names, or config values are rejected.
+
+`jobtx` is rejected with `ERR NO_TRAY` when neither sensor detects a tray.
+`jobrx` is rejected with `ERR TRAY_PRESENT` when a tray is already on the
+conveyor.
 
 MQTT commands are high-level JSON only:
 
@@ -173,6 +184,7 @@ MQTT defaults:
 - Emergency topic: `conveyor/C0/emergency`
 - Shared emergency topic: `conveyor/all/emergency`
 - Feedback topic: `conveyor/C0/feedback`
+- Tray topic: `conveyor/C0/tray`
 
 ## Architecture
 
@@ -210,6 +222,8 @@ Current high-level job states:
 - `S0` is the entry sensor.
 - `S1` is the exit sensor.
 - The tray always moves from `S0` toward `S1`.
+- The tray length is greater than the distance between `S0` and `S1`.
+- A tray on the conveyor always triggers at least one of `S0` or `S1`.
 - Sensors are active low: GPIO `0` means tray detected.
 - Commands are strict and literal.
 - Sensor output is binary. Both 1 to 0 and 0 to 1 transitions are printed when watching is enabled.

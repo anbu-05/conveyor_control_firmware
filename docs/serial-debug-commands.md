@@ -19,11 +19,15 @@ S1 = exit sensor
 
 The conveyor always moves a tray from `S0` toward `S1`.
 
+The distance between `S0` and `S1` is smaller than the tray length, so a tray
+on the conveyor always triggers `S0`, `S1`, or both.
+
 ```text
 tx0 = S0
 tx1 = S1
 rx0 = S0
 rx1 = S1
+has_tray = S0 detected OR S1 detected
 ```
 
 ## `setmotor M0 128 1`
@@ -165,6 +169,41 @@ Success output:
 OK WATCHSENSORS OFF
 ```
 
+## `gettray`
+
+Prints the derived tray-presence status.
+
+Input:
+
+```text
+gettray
+```
+
+Output:
+
+```text
+TRAY C0 1 0 1
+```
+
+Field order:
+
+```text
+TRAY <conveyor_id> <has_tray> <s0> <s1>
+```
+
+Meaning:
+
+- `has_tray` is `1` when `S0` or `S1` detects a tray.
+- `s0` and `s1` are raw GPIO readings.
+- Raw sensor `0` means tray detected.
+- Raw sensor `1` means no tray detected.
+
+Error output:
+
+```text
+ERR BAD_ARGS
+```
+
 ## `getconfig`
 
 Prints all editable runtime config values.
@@ -298,6 +337,7 @@ jobtx
 Effect:
 
 - Queues `CONVEYOR_CMD_START_TX`.
+- Rejected with `ERR NO_TRAY` if neither sensor detects a tray.
 - The tray moves from `S0` toward `S1`.
 - The state machine starts the motor immediately if it is idle.
 - TX waits for `tx1` / `S1`, then stops after `tx1` clears.
@@ -312,6 +352,7 @@ Possible error outputs:
 
 ```text
 ERR BAD_ARGS
+ERR NO_TRAY
 ERR JOB_BUSY
 ERR JOB_QUEUE
 ```
@@ -329,6 +370,7 @@ jobrx
 Effect:
 
 - Queues `CONVEYOR_CMD_START_RX`.
+- Rejected with `ERR TRAY_PRESENT` if a tray is already on this conveyor.
 - The receiver arms without moving.
 - The motor starts only after `rx0` / `S0` detects a tray.
 - The motor stops when `rx1` / `S1` detects the tray.
@@ -343,6 +385,7 @@ Possible error outputs:
 
 ```text
 ERR BAD_ARGS
+ERR TRAY_PRESENT
 ERR JOB_BUSY
 ERR JOB_QUEUE
 ```
@@ -420,6 +463,12 @@ EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
 EVENT JOB C0 TX_WAIT_FOR_TX1_CLEAR
 EVENT JOB C0 TX_DONE
 EVENT JOB C0 IDLE
+```
+
+Tray status:
+
+```text
+TRAY C0 1 0 1
 ```
 
 Unknown command:

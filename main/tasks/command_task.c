@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
 #include "conveyor_job.h"
 #include "microrl.h"
 #include "runtime_config.h"
@@ -13,6 +14,16 @@ static void send_job_command(conveyor_cmd_t command, const char *ok_text)
     if ((command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) &&
         !conveyor_job_is_idle()) {
         console_print("ERR JOB_BUSY\r\n");
+        return;
+    }
+
+    if (command.type == CONVEYOR_CMD_START_TX && !conveyor_job_has_tray()) {
+        console_print("ERR NO_TRAY\r\n");
+        return;
+    }
+
+    if (command.type == CONVEYOR_CMD_START_RX && conveyor_job_has_tray()) {
+        console_print("ERR TRAY_PRESENT\r\n");
         return;
     }
 
@@ -238,6 +249,23 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "gettray") == 0) {
+        conveyor_tray_status_t tray_status;
+
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        conveyor_job_get_tray_status(&tray_status);
+        console_printf("TRAY %s %d %d %d\r\n",
+                       CONVEYOR_ID,
+                       tray_status.has_tray ? 1 : 0,
+                       tray_status.s0,
+                       tray_status.s1);
         return 0;
     }
 

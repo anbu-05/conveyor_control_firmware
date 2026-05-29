@@ -52,9 +52,7 @@ void app_main(void)
 
 #if CONVEYOR_MQTT_ENABLED
     configure_mqtt();
-#if CONVEYOR_MQTT_STATUS_ENABLED
     xTaskCreate(mqtt_status_task, "mqtt_status", CONVEYOR_MQTT_STATUS_TASK_STACK_SIZE, NULL, CONVEYOR_MQTT_STATUS_TASK_PRIORITY, NULL);
-#endif
 #endif
 
     console_print("READY conveyor\r\n");

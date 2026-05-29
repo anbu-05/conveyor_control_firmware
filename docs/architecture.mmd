@@ -10,7 +10,9 @@ stateDiagram
     motors: MD30C + motor
 
     mqtt --> statemachine : JSON top-level commands
+    statemachine --> mqtt : tray presence + job feedback
     microrl --> statemachine : jobtx/jobrx/estop/clearerror
+    microrl --> statemachine : gettray status query
     microrl --> motor_controller : debug PWM commands through motor state
     statemachine --> motor_controller : move/stop requests through motor state
     motor_controller --> motors : GPIO direction + LEDC PWM
