@@ -93,7 +93,7 @@ Start condition:
 Flow:
 
 1. The state machine sets the job direction.
-2. The motor starts immediately in that direction using `CONVEYOR_RUN_PWM`.
+2. The motor starts immediately in that direction using runtime `run_pwm`.
 3. The state machine checks `tx_2`.
 4. If `tx_2` is already detecting the tray, state becomes
    `TX_WAIT_FOR_TX2_CLEAR`.
@@ -181,13 +181,15 @@ Effect:
 
 ## Timeouts
 
-Timeout constants are defined in `main/config/config.h`.
+Timeout defaults are defined in `main/config/config.h`, then loaded into
+runtime config at boot. Serial `setconfig` can edit and save the runtime
+timeout values in NVS.
 
 ```text
-CONVEYOR_TIMEOUT_TX_DETECT_MS
-CONVEYOR_TIMEOUT_TX_CLEAR_MS
-CONVEYOR_TIMEOUT_RX_DETECT_MS
-CONVEYOR_TIMEOUT_RX_DONE_MS
+tx_detect_timeout_ms
+tx_clear_timeout_ms
+rx_detect_timeout_ms
+rx_done_timeout_ms
 ```
 
 Timeout behavior:

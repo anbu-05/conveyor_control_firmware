@@ -21,6 +21,13 @@ All-conveyors emergency topic: conveyor/all/emergency
 Feedback topic: conveyor/C0/feedback
 ```
 
+The MQTT status publish period defaults to `CONVEYOR_MQTT_STATUS_PERIOD_MS`.
+It can be changed at runtime with serial debug:
+
+```text
+setconfig mqtt_status_period_ms 500
+```
+
 ## Direction Reference
 
 ```text

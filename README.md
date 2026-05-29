@@ -92,6 +92,7 @@ idf.py flash monitor
 
 - `main/main.c`: app startup, mutex creation, hardware setup calls, task creation.
 - `main/config/config.h`: hardcoded conveyor ID, MQTT, motor speed, and timeout config.
+- `main/config/runtime_config.c`: runtime-editable config values loaded from and saved to NVS.
 - `main/shared/app_state.c`: shared motor/sensor state, console printing, motor lookup.
 - `main/tasks/command_task.c`: microrl serial command task and command handling.
 - `main/tasks/motor_task.c`: motor PWM/direction setup and output task.

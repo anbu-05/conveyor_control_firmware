@@ -163,6 +163,126 @@ Success output:
 OK WATCHSENSORS OFF
 ```
 
+## `getconfig`
+
+Prints all editable runtime config values.
+
+Input:
+
+```text
+getconfig
+```
+
+Output:
+
+```text
+CONFIG run_pwm 128
+CONFIG done_hold_ms 100
+CONFIG tx_detect_timeout_ms 5000
+CONFIG tx_clear_timeout_ms 5000
+CONFIG rx_detect_timeout_ms 5000
+CONFIG rx_done_timeout_ms 5000
+CONFIG mqtt_status_period_ms 100
+```
+
+## `getconfig run_pwm`
+
+Prints one editable runtime config value.
+
+Input:
+
+```text
+getconfig run_pwm
+```
+
+Output:
+
+```text
+CONFIG run_pwm 128
+```
+
+Unknown config output:
+
+```text
+ERR UNKNOWN_CONFIG
+```
+
+## `setconfig run_pwm 140`
+
+Sets one editable runtime config value and saves it to NVS.
+
+Input:
+
+```text
+setconfig run_pwm 140
+```
+
+Effect:
+
+- Validates the config name and value.
+- Rejects the change if the conveyor state machine is not `IDLE`.
+- Saves the value to NVS.
+- Updates the RAM value used by later jobs.
+
+Success output:
+
+```text
+OK SETCONFIG run_pwm 140
+```
+
+Possible error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_CONFIG
+ERR BAD_VALUE
+ERR CONFIG_BUSY
+ERR CONFIG_SAVE
+```
+
+Editable keys:
+
+```text
+run_pwm                  0..255
+done_hold_ms             0..60000
+tx_detect_timeout_ms     1..600000
+tx_clear_timeout_ms      1..600000
+rx_detect_timeout_ms     1..600000
+rx_done_timeout_ms       1..600000
+mqtt_status_period_ms    100..60000
+```
+
+## `resetconfig`
+
+Restores editable runtime config values to defaults from `main/config/config.h`
+and saves those defaults to NVS.
+
+Input:
+
+```text
+resetconfig
+```
+
+Effect:
+
+- Rejects the reset if the conveyor state machine is not `IDLE`.
+- Restores all editable values to compile-time defaults.
+- Saves defaults to NVS.
+
+Success output:
+
+```text
+OK RESETCONFIG
+```
+
+Possible error outputs:
+
+```text
+ERR BAD_ARGS
+ERR CONFIG_BUSY
+ERR CONFIG_SAVE
+```
+
 ## `jobtx right`
 
 Submits a transmitter job to the central conveyor state machine.

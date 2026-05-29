@@ -18,6 +18,8 @@ Added a central conveyor job state machine for high-level tray transfer jobs. MQ
 
 Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/broker/topic config, `espressif/mqtt` dependency, WiFi/MQTT setup in its own module, JSON high-level command parsing, and feedback publishing. MQTT does not expose raw PWM commands.
 
+Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
@@ -38,8 +40,13 @@ ERR BAD_PWM
 ERR BAD_DIRECTION
 ERR JOB_QUEUE
 ERR JOB_BUSY
+ERR UNKNOWN_CONFIG
+ERR BAD_VALUE
+ERR CONFIG_BUSY
+ERR CONFIG_SAVE
 EVENT SENSOR S0 1 0
 EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
+CONFIG run_pwm 128
 ```
 
 ## Files
@@ -49,6 +56,8 @@ EVENT JOB C0 TX_WAIT_FOR_TX2_DETECT right
 - `main/idf_component.yml`: ESP-IDF component dependency manifest for `espressif/mqtt`.
 - `main/main.c`: ESP-IDF app startup, mutex creation, setup calls, task creation, and `READY conveyor`.
 - `main/config/config.h`: Hardcoded conveyor ID, MQTT, open-loop speed, task, and timeout config.
+- `main/config/runtime_config.h`: Runtime config getter/setter API.
+- `main/config/runtime_config.c`: NVS-backed runtime config loading, validation, printing, setting, and reset.
 - `main/shared/app_state.h`: Shared structs, constants, globals, and task/setup prototypes.
 - `main/shared/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
 - `main/tasks/command_task.c`: Strict command parser and `microrl_task`.
@@ -113,6 +122,10 @@ stopmotor M0
 stop
 watchsensors on
 watchsensors off
+getconfig
+getconfig run_pwm
+setconfig run_pwm 140
+resetconfig
 jobtx left
 jobtx right
 jobrx left
@@ -126,12 +139,16 @@ clearerror
 - `stop`: sets PWM to `0` for all motors.
 - `watchsensors on`: enables sensor event printing.
 - `watchsensors off`: disables sensor event printing.
+- `getconfig`: prints all editable runtime config values.
+- `getconfig run_pwm`: prints one editable runtime config value.
+- `setconfig run_pwm 140`: validates, saves, and applies a runtime config value.
+- `resetconfig`: restores editable runtime config values to defaults.
 - `jobtx left/right`: submits a transmitter job to the conveyor state machine.
 - `jobrx left/right`: submits a receiver job to the conveyor state machine.
 - `estop`: stops the active conveyor job and motor immediately.
 - `clearerror`: returns `ERROR` or `ESTOP` to `IDLE`.
 
-Invalid command names, motor names, argument counts, PWM values, or direction values are rejected.
+Invalid command names, motor names, argument counts, PWM values, direction values, config names, or config values are rejected.
 
 MQTT commands are high-level JSON only:
 

@@ -5,6 +5,7 @@
 #include "conveyor_job.h"
 #include "esp_log.h"
 #include "mqtt_task.h"
+#include "runtime_config.h"
 
 static const char *TAG = "conveyor";
 
@@ -39,6 +40,7 @@ void app_main(void)
     }
 
     configure_console();
+    configure_runtime_config();
     configure_pwm();
     configure_sensors();
     configure_conveyor_job();

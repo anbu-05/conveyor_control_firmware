@@ -12,7 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
-#include "nvs_flash.h"
+#include "runtime_config.h"
 
 static const char *TAG = "ConveyorMQTT";
 
@@ -294,22 +294,12 @@ void mqtt_status_task(void *arg)
     while (1) {
         conveyor_job_get_status(&status);
         mqtt_publish_job_status(&status);
-        vTaskDelay(pdMS_TO_TICKS(CONVEYOR_MQTT_STATUS_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(runtime_config_mqtt_status_period_ms()));
     }
 }
 
 void configure_mqtt(void)
 {
-    esp_err_t err;
-
-    err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ESP_ERROR_CHECK(nvs_flash_init());
-    } else {
-        ESP_ERROR_CHECK(err);
-    }
-
     wifi_init();
     mqtt_init();
 }

@@ -1,5 +1,6 @@
 idf_component_register(SRCS
                     "main.c"
+                    "config/runtime_config.c"
                     "shared/app_state.c"
                     "tasks/command_task.c"
                     "conveyor/conveyor_job.c"

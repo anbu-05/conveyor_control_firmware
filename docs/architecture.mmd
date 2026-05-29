@@ -18,3 +18,4 @@ stateDiagram
     sensors --> sensor_controller : GPIO input
     encoders --> PID_controller : future encoder count
     PID_controller --> motor_controller : future closed-loop motor request
+    motor_controller --> PID_controller : future current motor state

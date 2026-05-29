@@ -15,7 +15,7 @@
 #define CONVEYOR_MQTT_TOPIC_FEEDBACK "conveyor/C0/feedback"
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency"
 
-#define CONVEYOR_RUN_PWM 128
+#define CONVEYOR_RUN_PWM 64
 #define CONVEYOR_DIRECTION_LEFT 0
 #define CONVEYOR_DIRECTION_RIGHT 1
 

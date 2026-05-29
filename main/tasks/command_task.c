@@ -6,6 +6,7 @@
 
 #include "conveyor_job.h"
 #include "microrl.h"
+#include "runtime_config.h"
 
 static bool parse_job_direction(const char *text, conveyor_direction_t *direction)
 {
@@ -36,6 +37,41 @@ static void send_job_command(conveyor_cmd_t command, const char *ok_text)
     }
 
     console_print(ok_text);
+}
+
+static bool parse_config_value(const char *text, int32_t *value)
+{
+    long parsed = 0;
+
+    if (text == NULL || value == NULL || text[0] == '\0') {
+        return false;
+    }
+
+    for (int i = 0; text[i] != '\0'; i++) {
+        if (text[i] < '0' || text[i] > '9') {
+            return false;
+        }
+    }
+
+    parsed = strtol(text, NULL, 10);
+    if (parsed < 0 || parsed > 600000) {
+        return false;
+    }
+
+    *value = (int32_t)parsed;
+    return true;
+}
+
+static void print_one_config(const char *name)
+{
+    int32_t value = 0;
+
+    if (!runtime_config_get_value(name, &value)) {
+        console_print("ERR UNKNOWN_CONFIG\r\n");
+        return;
+    }
+
+    console_printf("CONFIG %s %ld\r\n", name, (long)value);
 }
 
 /*
@@ -230,6 +266,79 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getconfig") == 0) {
+        if (argc == 1) {
+            runtime_config_print_all();
+            return 0;
+        }
+
+        if (argc == 2) {
+            print_one_config(argv[1]);
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "setconfig") == 0) {
+        int32_t old_value = 0;
+        int32_t new_value = 0;
+
+        if (argc != 3) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_get_value(argv[1], &old_value)) {
+            console_print("ERR UNKNOWN_CONFIG\r\n");
+            return 0;
+        }
+
+        if (!parse_config_value(argv[2], &new_value)) {
+            console_print("ERR BAD_VALUE\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_value_is_valid(argv[1], new_value)) {
+            console_print("ERR BAD_VALUE\r\n");
+            return 0;
+        }
+
+        if (!conveyor_job_is_idle()) {
+            console_print("ERR CONFIG_BUSY\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_set_value(argv[1], new_value)) {
+            console_print("ERR CONFIG_SAVE\r\n");
+            return 0;
+        }
+
+        console_printf("OK SETCONFIG %s %ld\r\n", argv[1], (long)new_value);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "resetconfig") == 0) {
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!conveyor_job_is_idle()) {
+            console_print("ERR CONFIG_BUSY\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_reset_defaults()) {
+            console_print("ERR CONFIG_SAVE\r\n");
+            return 0;
+        }
+
+        console_print("OK RESETCONFIG\r\n");
         return 0;
     }
 

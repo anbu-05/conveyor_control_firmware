@@ -4,6 +4,8 @@ flowchart TD
         AppStateH["main/shared/app_state.h"]
         AppStateC["main/shared/app_state.c"]
         ConfigH["main/config/config.h"]
+        RuntimeConfigH["main/config/runtime_config.h"]
+        RuntimeConfigC["main/config/runtime_config.c"]
         CommandTaskC["main/tasks/command_task.c"]
         ConveyorJobH["main/conveyor/conveyor_job.h"]
         ConveyorJobC["main/conveyor/conveyor_job.c"]
@@ -16,6 +18,7 @@ flowchart TD
     end
 
     MainCMake --> MainC
+    MainCMake --> RuntimeConfigC
     MainCMake --> AppStateC
     MainCMake --> CommandTaskC
     MainCMake --> ConveyorJobC
@@ -26,17 +29,25 @@ flowchart TD
 
     MainC --> AppStateH
     MainC --> ConfigH
+    MainC --> RuntimeConfigH
     MainC --> ConveyorJobH
     MainC --> MqttTaskH
 
     AppStateC --> AppStateH
+    RuntimeConfigC --> ConfigH
+    RuntimeConfigC --> RuntimeConfigH
+    RuntimeConfigC --> AppStateH
+    RuntimeConfigC --> NvsInit["nvs_flash_init()"]
     CommandTaskC --> AppStateH
     CommandTaskC --> ConveyorJobH
+    CommandTaskC --> RuntimeConfigH
     ConveyorJobC --> AppStateH
     ConveyorJobC --> ConfigH
     ConveyorJobC --> ConveyorJobH
     ConveyorJobC --> MqttTaskH
+    ConveyorJobC --> RuntimeConfigH
     MqttTaskC --> ConfigH
+    MqttTaskC --> RuntimeConfigH
     MqttTaskC --> ConveyorJobH
     MqttTaskC --> MqttTaskH
     MotorTaskC --> AppStateH
@@ -45,6 +56,7 @@ flowchart TD
     MainC --> AppMain["app_main()"]
     AppMain --> MutexCreate["create motor_mutex and console_mutex"]
     AppMain --> ConfigureConsole["configure_console()"]
+    AppMain --> ConfigureRuntimeConfig["configure_runtime_config()"]
     AppMain --> ConfigurePWM["configure_pwm()"]
     AppMain --> ConfigureSensors["configure_sensors()"]
     AppMain --> ConfigureJob["configure_conveyor_job()"]
@@ -71,8 +83,10 @@ flowchart TD
     MicrorlTask --> ExecuteCommand["execute_command()"]
     ExecuteCommand --> LowLevelSerial["setmotor/stopmotor/stop/watchsensors"]
     ExecuteCommand --> JobSerial["jobtx/jobrx/estop/clearerror"]
+    ExecuteCommand --> ConfigSerial["getconfig/setconfig/resetconfig"]
     LowLevelSerial --> MotorsArray
     JobSerial --> SendJobCommand["conveyor_job_send_command()"]
+    ConfigSerial --> RuntimeConfigC
 
     ConveyorJobC --> ConfigureJob
     ConfigureJob --> JobQueue["conveyor_cmd_queue"]
@@ -82,10 +96,10 @@ flowchart TD
     JobState --> SensorsArray
     JobState --> MoveMainMotor
     JobState --> StopAllMotors
+    JobState --> RuntimeConfigC
     JobState --> JobEvents["EVENT JOB lines and MQTT status"]
 
     MqttTaskC --> ConfigureMQTT
-    ConfigureMQTT --> NvsInit["nvs_flash_init()"]
     ConfigureMQTT --> WifiInit["WiFi station init"]
     ConfigureMQTT --> MqttInit["MQTT client init"]
     MqttInit --> MqttSubscribe["subscribe conveyor/C0 topics"]
@@ -93,6 +107,7 @@ flowchart TD
     MqttEvent --> JsonCommands["JSON high-level commands"]
     JsonCommands --> SendJobCommand
     MqttTaskC --> MqttStatusTask["mqtt_status_task()"]
+    MqttStatusTask --> RuntimeConfigC
     MqttStatusTask --> MqttFeedback["mqtt_publish_job_status()"]
 
     SensorTaskC --> ConfigureSensors

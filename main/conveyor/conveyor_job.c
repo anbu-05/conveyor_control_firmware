@@ -9,6 +9,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "mqtt_task.h"
+#include "runtime_config.h"
 
 static QueueHandle_t conveyor_cmd_queue;
 static conveyor_status_t current_status = {
@@ -165,7 +166,7 @@ static void start_tx(conveyor_direction_t direction)
     current_status.direction = direction;
     current_status.error[0] = '\0';
     move_main_motor(direction == CONVEYOR_DIR_LEFT ? CONVEYOR_DIRECTION_LEFT : CONVEYOR_DIRECTION_RIGHT,
-                    CONVEYOR_RUN_PWM);
+                    runtime_config_run_pwm());
 
     if (tray_detected(front_sensor(direction))) {
         set_state(CONVEYOR_STATE_TX_WAIT_FOR_TX2_CLEAR);
@@ -233,7 +234,7 @@ static void update_state(void)
         sensor = front_sensor(current_status.direction);
         if (tray_detected(sensor)) {
             set_state(CONVEYOR_STATE_TX_WAIT_FOR_TX2_CLEAR);
-        } else if (timeout_expired(CONVEYOR_TIMEOUT_TX_DETECT_MS)) {
+        } else if (timeout_expired(runtime_config_tx_detect_timeout_ms())) {
             set_error("TX_DETECT_TIMEOUT");
         }
         return;
@@ -244,7 +245,7 @@ static void update_state(void)
         if (!tray_detected(sensor)) {
             stop_all_motors();
             set_state(CONVEYOR_STATE_TX_DONE);
-        } else if (timeout_expired(CONVEYOR_TIMEOUT_TX_CLEAR_MS)) {
+        } else if (timeout_expired(runtime_config_tx_clear_timeout_ms())) {
             set_error("TX_CLEAR_TIMEOUT");
         }
         return;
@@ -254,9 +255,9 @@ static void update_state(void)
         sensor = incoming_sensor(current_status.direction);
         if (tray_detected(sensor)) {
             move_main_motor(current_status.direction == CONVEYOR_DIR_LEFT ? CONVEYOR_DIRECTION_LEFT : CONVEYOR_DIRECTION_RIGHT,
-                            CONVEYOR_RUN_PWM);
+                            runtime_config_run_pwm());
             set_state(CONVEYOR_STATE_RX_WAIT_FOR_RX2);
-        } else if (timeout_expired(CONVEYOR_TIMEOUT_RX_DETECT_MS)) {
+        } else if (timeout_expired(runtime_config_rx_detect_timeout_ms())) {
             set_error("RX_DETECT_TIMEOUT");
         }
         return;
@@ -267,14 +268,14 @@ static void update_state(void)
         if (tray_detected(sensor)) {
             stop_all_motors();
             set_state(CONVEYOR_STATE_RX_DONE);
-        } else if (timeout_expired(CONVEYOR_TIMEOUT_RX_DONE_MS)) {
+        } else if (timeout_expired(runtime_config_rx_done_timeout_ms())) {
             set_error("RX_DONE_TIMEOUT");
         }
         return;
     }
 
     if (current_status.state == CONVEYOR_STATE_TX_DONE || current_status.state == CONVEYOR_STATE_RX_DONE) {
-        if (timeout_expired(CONVEYOR_DONE_HOLD_MS)) {
+        if (timeout_expired(runtime_config_done_hold_ms())) {
             set_state(CONVEYOR_STATE_IDLE);
         }
     }
