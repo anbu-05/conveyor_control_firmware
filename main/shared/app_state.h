@@ -17,11 +17,11 @@
 #define MOTOR_CONTROLLER_DELAY_MS 20
 #define MICRORL_TASK_STACK_SIZE 4096
 #define MOTOR_TASK_STACK_SIZE 3072
+#define PID_TASK_STACK_SIZE 4096
+#define PID_CONTROLLER_DELAY_MS 20
 #define SENSOR_COUNT 2
 #define SENSOR_TASK_STACK_SIZE 3072
 #define SENSOR_POLL_DELAY_MS 20
-#define ENCODER_TASK_STACK_SIZE 3072
-#define ENCODER_READ_DELAY_MS 20
 #define ENCODER_WATCH_DELAY_MS 100
 #define ENCODER_GLITCH_FILTER_NS 1000
 #define ENCODER_PCNT_HIGH_LIMIT 32767
@@ -33,7 +33,10 @@ typedef struct {
     int direction;
     int position;
     int target_pos;
+    int target_speed;
+    int current_speed;
     bool pos_control;
+    bool speed_control;
     gpio_num_t pwm_gpio;
     gpio_num_t dir_gpio;
     gpio_num_t encoder_a_gpio;
@@ -61,6 +64,7 @@ void console_print(const char *text);
 void console_printf(const char *format, ...);
 motor_t *find_motor(const char *name);
 void move_main_motor(int direction, int pwm);
+void move_main_motor_speed(int direction, int speed);
 void stop_all_motors(void);
 
 void configure_pwm(void);
@@ -68,7 +72,7 @@ void configure_sensors(void);
 void configure_encoders(void);
 void microrl_task(void *arg);
 void motor_controller_task(void *arg);
+void pid_controller_task(void *arg);
 void sensor_reader_task(void *arg);
-void encoder_reader_task(void *arg);
 
 #endif

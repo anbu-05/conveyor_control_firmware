@@ -59,34 +59,3 @@ void configure_encoders(void)
         ESP_ERROR_CHECK(pcnt_unit_start(motors[i].pcnt_unit));
     }
 }
-
-void encoder_reader_task(void *arg)
-{
-    motor_t *motor = (motor_t *)arg;
-    int count = 0;
-    int watch_ticks = 0;
-    int watch_period_ticks = ENCODER_WATCH_DELAY_MS / ENCODER_READ_DELAY_MS;
-
-    if (watch_period_ticks < 1) {
-        watch_period_ticks = 1;
-    }
-
-    while (1) {
-        ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &count));
-
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        motor->position = count;
-        xSemaphoreGive(motor_mutex);
-
-        watch_ticks++;
-        if (watch_ticks >= watch_period_ticks) {
-            watch_ticks = 0;
-
-            if (encoder_watch_enabled && encoder_watch_motor == motor) {
-                console_printf("EVENT ENCODER %s %d\r\n", motor->name, count);
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(ENCODER_READ_DELAY_MS));
-    }
-}

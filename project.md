@@ -14,13 +14,15 @@ Troubleshooting update: command input now uses `stdin` instead of directly readi
 
 Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task polls them every 20 ms and prints machine-readable event lines when `watchsensors on` is enabled.
 
-Added a basic raw quadrature encoder reader for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder task explicitly configures both encoder pins as inputs with internal pullups, uses full x4 counting, a 1000 ns PCNT glitch filter, stores the current raw count in `M0.position`, and prints count events when `watchencoder M0 on` is enabled. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
+Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
+
+Added a dedicated P-only speed controller task. `pid_controller_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, stores `M0.position` and `M0.current_speed`, and writes PWM/direction requests for `motor_controller_task` to apply. The motor controller task remains a pure actuator loop.
 
 Added a central conveyor job state machine for high-level tray transfer jobs. MQTT and microrl can submit TX/RX/emergency/clear-error commands to the same queue, while the state machine owns the active job. DONE states auto-return to `IDLE` after a short report hold.
 
 Added MQTT support in the same style as the senior gantry repo: hardcoded WiFi/broker/topic config, `espressif/mqtt` dependency, WiFi/MQTT setup in its own module, JSON high-level command parsing, and feedback publishing. MQTT does not expose raw PWM commands.
 
-Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
+Added runtime-editable config values backed by NVS. Serial debug commands can read, set, and reset runtime-safe values such as `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, transfer timeouts, done hold time, and MQTT status period. Compile-time defaults still live in `main/config/config.h`.
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
@@ -48,6 +50,8 @@ OK WATCHSENSORS OFF
 OK WATCHENCODER M0 ON
 OK WATCHENCODER M0 OFF
 ENCODER M0 120 1 0
+OK SETSPEED M0
+OK SETKP 0.500
 TRAY C0 1 0 1
 OK JOBTX
 OK JOBRX
@@ -67,9 +71,11 @@ ERR BAD_VALUE
 ERR CONFIG_BUSY
 ERR CONFIG_SAVE
 EVENT SENSOR S0 1 0
-EVENT ENCODER M0 120
+EVENT ENCODER M0 120 100
 EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
 CONFIG run_pwm 128
+CONFIG run_speed_counts_per_sec 100
+CONFIG speed_kp 0.500
 ```
 
 ## Files
@@ -85,10 +91,11 @@ CONFIG run_pwm 128
 - `main/shared/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
 - `main/tasks/command_task.c`: Strict command parser and `microrl_task`.
 - `main/tasks/motor_task.c`: LEDC/direction GPIO setup and `motor_controller_task`.
+- `main/tasks/pid_task.c`: P-only speed controller task that reads PCNT and writes PWM/direction requests.
 - `main/tasks/mqtt_task.h`: MQTT setup, status task, and publishing API.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON parsing, command queue submission, and status publishing.
 - `main/tasks/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
-- `main/tasks/encoder_task.c`: Encoder PCNT setup and `encoder_reader_task`.
+- `main/tasks/encoder_task.c`: Encoder PCNT setup.
 - `main/conveyor/conveyor_job.h`: Conveyor command, state, status, setup, and task declarations.
 - `main/conveyor/conveyor_job.c`: Central TX/RX conveyor transfer state machine and job queue setup.
 - `components/microrl/`: Small vendored microrl-style command parser used by this app.
@@ -111,7 +118,10 @@ CONFIG run_pwm 128
 - `direction`
 - `position`
 - `target_pos`
+- `target_speed`
+- `current_speed`
 - `pos_control`
+- `speed_control`
 - `pwm_gpio`
 - `dir_gpio`
 - `encoder_a_gpio`
@@ -148,6 +158,8 @@ Strict commands currently supported:
 
 ```text
 setmotor M0 128 1
+setspeed M0 100
+setkp 0.500
 stopmotor M0
 stop
 watchsensors on
@@ -166,12 +178,14 @@ estop
 clearerror
 ```
 
-- `setmotor M0 128 1`: sets `M0.pwm = 128` and `M0.direction = 1`.
-- `stopmotor M0`: sets only `M0.pwm = 0`.
-- `stop`: sets PWM to `0` for all motors.
+- `setmotor M0 128 1`: sets `M0.pwm = 128`, `M0.direction = 1`, and disables speed control.
+- `setspeed M0 100`: sets `M0.target_speed = 100` counts/sec and enables speed control.
+- `setkp 0.500`: saves the speed P gain to NVS.
+- `stopmotor M0`: sets `M0.pwm = 0` and disables speed control.
+- `stop`: sets PWM to `0` for all motors and disables speed control.
 - `watchsensors on`: enables sensor event printing.
 - `watchsensors off`: disables sensor event printing.
-- `watchencoder M0 on`: enables raw encoder count event printing.
+- `watchencoder M0 on`: enables encoder count and speed event printing.
 - `watchencoder M0 off`: disables raw encoder count event printing.
 - `getencoder M0`: prints `ENCODER M0 <count> <gpio15_a> <gpio16_b>`.
 - `gettray`: prints derived tray presence and raw `S0/S1` values.
@@ -216,10 +230,10 @@ MQTT defaults:
 - `microrl_task`: reads console stdin input and edits shared state through command handlers.
 - `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
 - `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
-- `conveyor_job_task`: owns the TX/RX state machine and submits move/stop requests to the motor state.
-- `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM.
+- `conveyor_job_task`: owns the TX/RX state machine and submits speed/stop requests to the motor state.
+- `pid_controller_task`: reads PCNT, calculates speed, runs P-only speed control, and writes PWM/direction requests.
+- `motor_controller_task`: reads the motor struct and writes direction GPIO plus LEDC PWM only.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
-- `encoder_reader_task`: reads PCNT count and stores it in `motor.position`, printing encoder events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
 - `console_mutex`: keeps command responses and sensor event lines from interleaving.
 
@@ -258,7 +272,8 @@ Current high-level job states:
 - Encoder GPIO15/GPIO16 are configured as inputs with internal pullups before PCNT setup.
 - Encoder PCNT uses full x4 quadrature counting.
 - Encoder PCNT uses a 1000 ns hardware glitch filter to reject very short noise pulses.
-- Encoder output is raw count only. Filtering, zeroing, MQTT publishing, and position control are not implemented yet.
+- PID speed control is P-only. Integral and derivative terms are not implemented yet.
+- Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.
 
 ## Next Useful Commands
 

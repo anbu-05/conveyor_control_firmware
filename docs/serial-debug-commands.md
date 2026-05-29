@@ -50,6 +50,7 @@ Effect:
 
 - Sets `M0.pwm` to `128`.
 - Sets `M0.direction` to `1`.
+- Disables speed control for `M0`.
 - The motor controller task later writes those values to GPIO/LEDC.
 
 Success output:
@@ -80,6 +81,7 @@ stopmotor M0
 Effect:
 
 - Sets `M0.pwm` to `0`.
+- Disables speed control for `M0`.
 
 Success output:
 
@@ -92,6 +94,70 @@ Error outputs:
 ```text
 ERR BAD_ARGS
 ERR UNKNOWN_MOTOR
+```
+
+## `setspeed M0 100`
+
+Sets the signed speed target for `M0`.
+
+Input:
+
+```text
+setspeed M0 100
+```
+
+Arguments:
+
+- `M0`: the only configured motor name.
+- `100`: target speed in encoder counts per second. Negative values reverse direction.
+
+Effect:
+
+- Sets `M0.target_speed` to `100`.
+- Enables `M0.speed_control`.
+- The PID controller task reads PCNT, calculates current speed, and writes PWM/direction requests.
+
+Success output:
+
+```text
+OK SETSPEED M0
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+ERR BAD_VALUE
+```
+
+## `setkp 0.500`
+
+Sets and saves the P gain for speed control.
+
+Input:
+
+```text
+setkp 0.500
+```
+
+Effect:
+
+- Saves `speed_kp` to NVS.
+- The value is stored internally as thousandths.
+
+Success output:
+
+```text
+OK SETKP 0.500
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR BAD_VALUE
+ERR CONFIG_SAVE
 ```
 
 ## `stop`
@@ -107,6 +173,7 @@ stop
 Effect:
 
 - Sets every motor PWM to `0`.
+- Disables speed control for every motor.
 - Sends an emergency-stop command to the conveyor state machine.
 - The conveyor job state becomes `ESTOP` after the queued command is processed.
 
@@ -181,8 +248,9 @@ watchencoder M0 on
 
 Effect:
 
-- Prints `EVENT ENCODER M0 <count>` lines about every 100 ms.
+- Prints `EVENT ENCODER M0 <count> <speed>` lines about every 100 ms.
 - The count comes from PCNT using GPIO15 as channel A and GPIO16 as channel B.
+- The speed is calculated by the PID controller task in encoder counts per second.
 - The same raw count is stored in `M0.position`.
 
 Success output:
@@ -194,7 +262,7 @@ OK WATCHENCODER M0 ON
 Example event output:
 
 ```text
-EVENT ENCODER M0 120
+EVENT ENCODER M0 120 100
 ```
 
 Error outputs:
@@ -305,6 +373,8 @@ Output:
 
 ```text
 CONFIG run_pwm 128
+CONFIG run_speed_counts_per_sec 100
+CONFIG speed_kp 0.500
 CONFIG done_hold_ms 100
 CONFIG tx_detect_timeout_ms 5000
 CONFIG tx_clear_timeout_ms 5000
@@ -372,6 +442,8 @@ Editable keys:
 
 ```text
 run_pwm                  0..255
+run_speed_counts_per_sec 0..100000
+speed_kp_milli           0..100000
 done_hold_ms             0..60000
 tx_detect_timeout_ms     1..600000
 tx_clear_timeout_ms      1..600000
@@ -379,6 +451,9 @@ rx_detect_timeout_ms     1..600000
 rx_done_timeout_ms       1..600000
 mqtt_status_period_ms    100..60000
 ```
+
+Use `setkp <decimal>` for normal speed gain tuning. `speed_kp_milli` is the
+integer value saved internally.
 
 ## `resetconfig`
 
@@ -555,7 +630,7 @@ EVENT JOB C0 IDLE
 Encoder events:
 
 ```text
-EVENT ENCODER M0 120
+EVENT ENCODER M0 120 100
 ```
 
 Tray status:

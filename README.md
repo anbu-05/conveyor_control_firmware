@@ -113,6 +113,8 @@ Current editable keys:
 
 ```text
 run_pwm
+run_speed_counts_per_sec
+speed_kp
 done_hold_ms
 tx_detect_timeout_ms
 tx_clear_timeout_ms
@@ -122,6 +124,7 @@ mqtt_status_period_ms
 ```
 
 Use the serial debug commands `getconfig`, `setconfig`, and `resetconfig`.
+Use `setkp` for the decimal speed gain.
 
 ## Detailed Docs
 
@@ -153,9 +156,9 @@ EVENT SENSOR S1 0 1
 Encoder event examples:
 
 ```text
-EVENT ENCODER M0 120
-EVENT ENCODER M0 124
-EVENT ENCODER M0 116
+EVENT ENCODER M0 120 100
+EVENT ENCODER M0 124 120
+EVENT ENCODER M0 116 -80
 ```
 
 Encoder diagnostic example:
@@ -212,9 +215,10 @@ idf.py flash monitor
 - `main/shared/app_state.c`: shared motor/sensor state, console printing, motor lookup.
 - `main/tasks/command_task.c`: microrl serial command task and command handling.
 - `main/tasks/motor_task.c`: motor PWM/direction setup and output task.
+- `main/tasks/pid_task.c`: speed P controller task, encoder count reading, and speed calculation.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON command parsing, MQTT status task, and feedback publishing.
 - `main/tasks/sensor_task.c`: sensor GPIO setup and polling task.
-- `main/tasks/encoder_task.c`: encoder PCNT setup and count polling task.
+- `main/tasks/encoder_task.c`: encoder PCNT setup.
 - `main/conveyor/conveyor_job.c`: central TX/RX conveyor state machine and job queue setup.
 
 ## Current Limits
@@ -222,6 +226,7 @@ idf.py flash monitor
 - Only one motor, `M0`, is configured.
 - Two binary sensors, `S0` and `S1`, are configured.
 - Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
+- P-only speed control is implemented in `pid_controller_task`.
 - Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
-- Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.
+- Encoder filtering, zeroing, MQTT publishing, I/D control, and position control are not implemented yet.

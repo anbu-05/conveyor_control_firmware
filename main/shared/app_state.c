@@ -18,7 +18,10 @@ motor_t motors[MOTOR_COUNT] = {
         .direction = 0,
         .position = 0,
         .target_pos = 0,
+        .target_speed = 0,
+        .current_speed = 0,
         .pos_control = false,
+        .speed_control = false,
         .pwm_gpio = GPIO_NUM_7,
         .dir_gpio = GPIO_NUM_6,
         .encoder_a_gpio = GPIO_NUM_15,
@@ -112,6 +115,24 @@ void move_main_motor(int direction, int pwm)
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     motors[0].direction = direction;
     motors[0].pwm = pwm;
+    motors[0].target_speed = 0;
+    motors[0].speed_control = false;
+    xSemaphoreGive(motor_mutex);
+}
+
+void move_main_motor_speed(int direction, int speed)
+{
+    if (speed < 0) {
+        speed = -speed;
+    }
+
+    xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    if (direction == 0) {
+        motors[0].target_speed = -speed;
+    } else {
+        motors[0].target_speed = speed;
+    }
+    motors[0].speed_control = true;
     xSemaphoreGive(motor_mutex);
 }
 
@@ -120,6 +141,8 @@ void stop_all_motors(void)
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     for (int i = 0; i < MOTOR_COUNT; i++) {
         motors[i].pwm = 0;
+        motors[i].target_speed = 0;
+        motors[i].speed_control = false;
     }
     xSemaphoreGive(motor_mutex);
 }

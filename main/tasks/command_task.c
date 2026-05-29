@@ -59,9 +59,87 @@ static bool parse_config_value(const char *text, int32_t *value)
     return true;
 }
 
+static bool parse_signed_int(const char *text, int32_t *value)
+{
+    long parsed = 0;
+    int start = 0;
+
+    if (text == NULL || value == NULL || text[0] == '\0') {
+        return false;
+    }
+
+    if (text[0] == '-') {
+        start = 1;
+        if (text[1] == '\0') {
+            return false;
+        }
+    }
+
+    for (int i = start; text[i] != '\0'; i++) {
+        if (text[i] < '0' || text[i] > '9') {
+            return false;
+        }
+    }
+
+    parsed = strtol(text, NULL, 10);
+    if (parsed < -100000 || parsed > 100000) {
+        return false;
+    }
+
+    *value = (int32_t)parsed;
+    return true;
+}
+
+static bool parse_kp_milli(const char *text, int32_t *value)
+{
+    int32_t whole = 0;
+    int32_t fraction = 0;
+    int fraction_digits = 0;
+    int digit_count = 0;
+    int i = 0;
+
+    if (text == NULL || value == NULL || text[0] == '\0') {
+        return false;
+    }
+
+    while (text[i] >= '0' && text[i] <= '9') {
+        whole = whole * 10 + (text[i] - '0');
+        digit_count++;
+        i++;
+    }
+
+    if (text[i] == '.') {
+        i++;
+        while (text[i] >= '0' && text[i] <= '9' && fraction_digits < 3) {
+            fraction = fraction * 10 + (text[i] - '0');
+            fraction_digits++;
+            digit_count++;
+            i++;
+        }
+    }
+
+    if (text[i] != '\0' || digit_count == 0) {
+        return false;
+    }
+
+    while (fraction_digits < 3) {
+        fraction = fraction * 10;
+        fraction_digits++;
+    }
+
+    *value = whole * 1000 + fraction;
+    return runtime_config_value_is_valid("speed_kp_milli", *value);
+}
+
 static void print_one_config(const char *name)
 {
     int32_t value = 0;
+
+    if (strcmp(name, "speed_kp") == 0) {
+        value = runtime_config_speed_kp_milli();
+        console_printf("CONFIG speed_kp %ld.%03ld\r\n", (long)(value / 1000), (long)(value % 1000));
+        return;
+    }
 
     if (!runtime_config_get_value(name, &value)) {
         console_print("ERR UNKNOWN_CONFIG\r\n");
@@ -80,6 +158,8 @@ static int execute_command(int argc, const char *const *argv)
 {
     long pwm = 0;
     long direction = 0;
+    int32_t speed = 0;
+    int32_t kp_milli = 0;
     motor_t *motor = NULL;
 
     if (strcmp(argv[0], "setmotor") == 0) {
@@ -134,9 +214,57 @@ static int execute_command(int argc, const char *const *argv)
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
         motor->pwm = (int)pwm;
         motor->direction = (int)direction;
+        motor->target_speed = 0;
+        motor->speed_control = false;
         xSemaphoreGive(motor_mutex);
 
         console_printf("OK SETMOTOR %s\r\n", motor->name);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "setspeed") == 0) {
+        if (argc != 3) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        if (!parse_signed_int(argv[2], &speed)) {
+            console_print("ERR BAD_VALUE\r\n");
+            return 0;
+        }
+
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        motor->target_speed = speed;
+        motor->speed_control = true;
+        xSemaphoreGive(motor_mutex);
+
+        console_printf("OK SETSPEED %s\r\n", motor->name);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "setkp") == 0) {
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!parse_kp_milli(argv[1], &kp_milli)) {
+            console_print("ERR BAD_VALUE\r\n");
+            return 0;
+        }
+
+        if (!runtime_config_set_speed_kp_milli(kp_milli)) {
+            console_print("ERR CONFIG_SAVE\r\n");
+            return 0;
+        }
+
+        console_printf("OK SETKP %ld.%03ld\r\n", (long)(kp_milli / 1000), (long)(kp_milli % 1000));
         return 0;
     }
 
@@ -154,6 +282,8 @@ static int execute_command(int argc, const char *const *argv)
 
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
         motor->pwm = 0;
+        motor->target_speed = 0;
+        motor->speed_control = false;
         xSemaphoreGive(motor_mutex);
 
         console_printf("OK STOPMOTOR %s\r\n", motor->name);

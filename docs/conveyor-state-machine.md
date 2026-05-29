@@ -103,7 +103,7 @@ ERR NO_TRAY
 
 Flow:
 
-1. The motor starts immediately using runtime `run_pwm`.
+1. The motor starts immediately using runtime `run_speed_counts_per_sec`.
 2. The state machine checks `tx1` / `S1`.
 3. If `tx1` is already detecting the tray, state becomes
    `TX_WAIT_FOR_TX1_CLEAR`.
@@ -444,12 +444,13 @@ The state machine does not write GPIO or LEDC hardware directly.
 It calls shared motor helpers:
 
 ```text
-move_main_motor(CONVEYOR_MOTOR_FORWARD_DIRECTION, pwm)
+move_main_motor_speed(CONVEYOR_MOTOR_FORWARD_DIRECTION, speed)
 stop_all_motors()
 ```
 
-The `motor_controller_task` is still the only task that writes the actual
-direction GPIO and LEDC PWM hardware.
+The `pid_controller_task` reads encoder PCNT and writes PWM/direction requests.
+The `motor_controller_task` only writes the actual direction GPIO and LEDC PWM
+hardware.
 
 ## Status Output
 

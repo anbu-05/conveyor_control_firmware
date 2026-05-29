@@ -303,6 +303,6 @@ state-machine errors like `TX_DETECT_TIMEOUT` or `RX_DONE_TIMEOUT`.
 - Broker URI is a compile-time constant.
 - Payload parsing is exact string matching.
 - MQTT does not expose raw `setmotor`, `stopmotor`, or runtime config commands.
-- MQTT does not change `run_pwm` or timeout settings.
+- MQTT does not change `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, or timeout settings.
 - MQTT status publish period is runtime-configurable through serial only.
 - MQTT tray presence is change-driven and does not publish continuously.
