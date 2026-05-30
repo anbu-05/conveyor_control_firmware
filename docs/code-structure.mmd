@@ -1,123 +1,96 @@
-flowchart TD
-    subgraph Startup["Startup"]
-        Main["main/main.c"]
-        AppMain["app_main"]
-        ConsoleSetup["configure_console"]
-        TaskCreate["FreeRTOS task creation"]
-    end
+stateDiagram-v2
+    direction TB
 
-    subgraph Shared["Shared State"]
-        AppStateH["shared/app_state.h"]
-        AppStateC["shared/app_state.c"]
-        Motors["motors[]"]
-        Sensors["sensors[]"]
-        Mutexes["motor_mutex / console_mutex"]
-        MotorHelpers["move_motor / start_motor / stop_motor / stop_all_motors"]
-    end
+    state "main/" as Main {
+        direction LR
+        MainC: main.c
+        AppMain: app_main
+    }
 
-    subgraph Config["Runtime Config"]
-        ConfigH["config/config.h"]
-        RuntimeH["config/runtime_config.h"]
-        RuntimeC["config/runtime_config.c"]
-        Nvs["NVS storage"]
-    end
+    state "main/config/" as Config {
+        direction LR
+        ConfigH: config.h defaults
+        RuntimeH: runtime_config.h API
+        RuntimeC: runtime_config.c NVS-backed values
+    }
 
-    subgraph Commands["Serial Commands"]
-        CommandTask["tasks/command_task.c"]
-        MicrorlTask["microrl_task"]
-        CommandHandlers["setmotor / setspeed / jobtx / jobrx / config commands"]
-        Microrl["components/microrl"]
-    end
+    state "main/shared/" as Shared {
+        direction LR
+        AppStateH: app_state.h shared types/API
+        AppStateC: app_state.c shared tables/helpers
+        Motors: motors[] M0
+        Sensors: sensors[] S0/S1
+    }
 
-    subgraph Jobs["Conveyor Jobs"]
-        JobH["conveyor/conveyor_job.h"]
-        JobC["conveyor/conveyor_job.c"]
-        JobQueue["conveyor_cmd_queue"]
-        JobTask["conveyor_job_task"]
-        StateMachine["TX/RX/ERROR/ESTOP state machine"]
-    end
+    state "main/tasks/" as Tasks {
+        direction LR
+        CommandTask: command_task.c microrl_task
+        SensorTask: sensor_task.c sensor_reader_task
+        MotorTask: motor_task.c PWM setup
+        EncoderTask: encoder_task.c PCNT setup
+        MotorPidTask: motor_pid_task.c motor_pid_task
+        MqttTask: mqtt_task.c mqtt_status_task
+    }
 
-    subgraph MotorControl["Motor And Encoder"]
-        MotorTask["tasks/motor_task.c"]
-        EncoderTask["tasks/encoder_task.c"]
-        PidTask["tasks/motor_pid_task.c"]
-        PwmSetup["configure_pwm"]
-        EncoderSetup["configure_encoders"]
-        MotorPidTask["motor_pid_task"]
-    end
+    state "main/conveyor/" as Conveyor {
+        direction LR
+        ConveyorH: conveyor_job.h commands/states/status
+        ConveyorC: conveyor_job.c conveyor_job_task
+        ConveyorQueue: conveyor_cmd_queue
+        ConveyorStates: IDLE/TX/RX/DONE/ERROR/ESTOP
+    }
 
-    subgraph SensorsArea["Sensors"]
-        SensorTaskC["tasks/sensor_task.c"]
-        SensorSetup["configure_sensors"]
-        SensorReader["sensor_reader_task"]
-    end
+    state "components/microrl/" as Components {
+        direction LR
+        MicrorlComponent: microrl command parser
+    }
 
-    subgraph Mqtt["MQTT"]
-        MqttH["tasks/mqtt_task.h"]
-        MqttC["tasks/mqtt_task.c"]
-        MqttSetup["configure_mqtt"]
-        MqttEvents["mqtt_event_handler"]
-        MqttStatus["mqtt_status_task"]
-    end
+    state "Hardware and network APIs" as Platform {
+        direction LR
+        GpioLedc: ESP-IDF GPIO/LEDC
+        Pcnt: ESP-IDF PCNT
+        WifiMqtt: ESP-IDF WiFi/MQTT
+        Nvs: ESP-IDF NVS
+    }
 
-    Main --> AppMain
-    AppMain --> ConsoleSetup
-    AppMain --> RuntimeC
-    AppMain --> PwmSetup
-    AppMain --> SensorSetup
-    AppMain --> EncoderSetup
-    AppMain --> JobQueue
-    AppMain --> TaskCreate
+    [*] --> Main
 
-    TaskCreate --> MicrorlTask
-    TaskCreate --> JobTask
-    TaskCreate --> MotorPidTask
-    TaskCreate --> SensorReader
-    TaskCreate --> MqttStatus
-
-    AppStateH --> Motors
-    AppStateH --> Sensors
-    AppStateC --> Motors
-    AppStateC --> Sensors
-    AppStateC --> Mutexes
-    AppStateC --> MotorHelpers
+    MainC --> AppMain
+    AppMain --> Config: load runtime config
+    AppMain --> Shared: create mutexes/use tables
+    AppMain --> Tasks: configure hardware and start tasks
+    AppMain --> Conveyor: create job queue/start job task
 
     ConfigH --> RuntimeC
     RuntimeH --> RuntimeC
     RuntimeC --> Nvs
-    RuntimeC --> CommandHandlers
-    RuntimeC --> StateMachine
-    RuntimeC --> MotorPidTask
-    RuntimeC --> MqttStatus
 
-    CommandTask --> MicrorlTask
-    MicrorlTask --> Microrl
-    MicrorlTask --> CommandHandlers
-    CommandHandlers --> Motors
-    CommandHandlers --> JobQueue
-    CommandHandlers --> RuntimeC
+    AppStateH --> AppStateC
+    AppStateC --> Motors
+    AppStateC --> Sensors
 
-    JobC --> JobTask
-    JobH --> JobC
-    JobTask --> JobQueue
-    JobTask --> StateMachine
-    StateMachine --> Sensors
-    StateMachine --> MotorHelpers
-    StateMachine --> MqttC
+    CommandTask --> MicrorlComponent
+    CommandTask --> Shared
+    CommandTask --> Conveyor
+    CommandTask --> Config
 
-    MotorTask --> PwmSetup
-    EncoderTask --> EncoderSetup
-    PidTask --> MotorPidTask
-    MotorPidTask --> Motors
-    MotorPidTask --> RuntimeC
+    SensorTask --> Shared
+    SensorTask --> GpioLedc
+    MotorTask --> Shared
+    MotorTask --> GpioLedc
+    EncoderTask --> Shared
+    EncoderTask --> Pcnt
+    MotorPidTask --> Shared
+    MotorPidTask --> Config
+    MotorPidTask --> GpioLedc
+    MotorPidTask --> Pcnt
+    MqttTask --> Conveyor
+    MqttTask --> Config
+    MqttTask --> WifiMqtt
 
-    SensorTaskC --> SensorSetup
-    SensorTaskC --> SensorReader
-    SensorReader --> Sensors
-
-    MqttC --> MqttSetup
-    MqttC --> MqttEvents
-    MqttC --> MqttStatus
-    MqttEvents --> JobQueue
-    MqttStatus --> JobC
-    MqttH --> MqttC
+    ConveyorH --> ConveyorC
+    ConveyorC --> ConveyorQueue
+    ConveyorC --> ConveyorStates
+    ConveyorC --> Shared
+    ConveyorC --> Config
+    ConveyorC --> MqttTask

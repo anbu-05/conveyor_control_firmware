@@ -24,6 +24,8 @@ Speed control now uses measured speed-to-PWM feed-forward plus P/D trim. `motor_
 
 The current base PWM table was measured manually: `0->0`, `8->360`, `16->1040`, `24->1650`, `32->2270`, `48->3490`, `64->4670`, `72->5340`, `80->6050`, `88->6570`, `96->7230`, `104->7890`, `112->8590`, `120->9260`, `128->9870`. The code linearly interpolates between those points.
 
+Current tested speed gains with the feed-forward table are `speed_kp = 0.010` and `speed_kd = 0.010`. This was reported as working well on the current no-load/manual test setup.
+
 Conveyor jobs now only request fixed-direction run/stop for a named motor. `start_motor("M0")` uses `CONVEYOR_MOTOR_FORWARD_DIRECTION` and runtime `run_speed_counts_per_sec`. Normal TX/RX completion uses `stop_motor("M0")`, which sets target speed to zero and lets `motor_pid_task` ramp down. Errors, emergency stops, and explicit serial stops still use immediate stop behavior.
 
 MQTT `tx`/`rx` commands do not carry speed. They only queue high-level jobs, so job motor speed always comes from runtime config `run_speed_counts_per_sec`. If serial `setspeed M0 <value>` feels correct but MQTT jobs crawl, check `getconfig run_speed_counts_per_sec` and set it with `setconfig run_speed_counts_per_sec <value>`.
@@ -50,7 +52,7 @@ MQTT feedback now includes `state_elapsed_ms`, the elapsed milliseconds since th
 
 Current sensor interpretation is active-low: raw GPIO `0` means tray detected, and raw GPIO `1` means no tray.
 
-Cleaned up `docs/architecture.mmd` and `docs/code-structure.mmd` so they match the current combined motor PID design. The architecture diagram now shows command inputs, conveyor control, runtime config, motor PID, sensors, and hardware as grouped runtime blocks. The code-structure diagram now shows startup, shared state, runtime config, serial commands, conveyor jobs, motor/encoder, sensors, and MQTT as grouped code modules instead of a long function-level tangle.
+Rebuilt `docs/architecture.mmd` and `docs/code-structure.mmd` as cleaner top-to-bottom `stateDiagram-v2` diagrams. The architecture diagram now separates external inputs, readers, shared control, motor control, and outputs. The code-structure diagram now shows source ownership by folder instead of function-level wiring.
 
 Serial output is now token-based for a Python wrapper:
 

@@ -1,25 +1,71 @@
-stateDiagram
-    mqtt: mqtt_task
-    microrl: microrl_task
-    sensor_controller: sensor_reader_task
-    statemachine: conveyor_job_task
-    motor_controller: motor_pid_task
-    speed_controller: speed controller
-    encoders: quadrature encoder
-    sensors: S0/S1 BGS sensors
-    motors: MD30C + motor
+stateDiagram-v2
+    direction TB
 
-    mqtt --> statemachine
-    statemachine --> mqtt
-    microrl --> statemachine
-    microrl --> statemachine
-    microrl --> motor_controller
-    statemachine --> motor_controller
-    motor_controller --> motors
-    sensor_controller --> statemachine
-    sensors --> sensor_controller
-    encoder_reader: encoder_reader
-    encoders --> encoder_reader
-    encoder_reader --> speed_controller
-    speed_controller --> motor_controller
-    motor_controller --> speed_controller
+    state "External inputs" as Inputs {
+        direction LR
+        Serial: USB serial debug commands
+        MqttIn: MQTT command topics
+        SensorHw: S0/S1 tray sensors
+        EncoderHw: M0 quadrature encoder
+    }
+
+    state "Input readers" as Readers {
+        direction LR
+        Microrl: microrl_task
+        MqttClient: mqtt_task
+        SensorReader: sensor_reader_task
+        EncoderReader: PCNT encoder reader
+    }
+
+    state "Shared control" as Control {
+        direction LR
+        JobQueue: conveyor_cmd_queue
+        JobMachine: conveyor_job_task state machine
+        RuntimeConfig: runtime_config in RAM/NVS
+        SharedState: motors[] and sensors[]
+    }
+
+    state "Motor control" as MotorControl {
+        direction LR
+        MotorRequest: M0 target speed/PWM request
+        MotorPid: motor_pid_task
+        SpeedMath: feed-forward plus P/D speed control
+    }
+
+    state "Outputs" as Outputs {
+        direction LR
+        MotorHw: MD30C PWM/direction and motor
+        SerialOut: serial OK/ERR/EVENT lines
+        MqttOut: MQTT feedback and tray status
+    }
+
+    [*] --> Inputs
+
+    Serial --> Microrl
+    MqttIn --> MqttClient
+    SensorHw --> SensorReader
+    EncoderHw --> EncoderReader
+
+    Microrl --> JobQueue: jobtx/jobrx/estop/clearerror
+    MqttClient --> JobQueue: tx/rx/emergency/clear
+    Microrl --> RuntimeConfig: get/set/reset config
+    Microrl --> MotorRequest: direct debug motor commands
+
+    SensorReader --> SharedState: raw sensor values
+    EncoderReader --> MotorPid: count delta
+    SharedState --> JobMachine: S0/S1 and has_tray
+    RuntimeConfig --> JobMachine: timeouts and done hold
+    RuntimeConfig --> MotorPid: speed target and gains
+
+    JobQueue --> JobMachine
+    JobMachine --> MotorRequest: start/stop M0
+    JobMachine --> SerialOut: job events and errors
+    JobMachine --> MqttOut: job feedback
+
+    MotorRequest --> MotorPid
+    MotorPid --> SpeedMath
+    SpeedMath --> SharedState: position/current speed/PWM
+    MotorPid --> MotorHw
+
+    SharedState --> SerialOut: sensor/encoder/motor/tray reports
+    SharedState --> MqttOut: tray status
