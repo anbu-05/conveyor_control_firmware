@@ -40,7 +40,7 @@ flowchart TD
     subgraph MotorControl["Motor And Encoder"]
         MotorTask["tasks/motor_task.c"]
         EncoderTask["tasks/encoder_task.c"]
-        PidTask["tasks/pid_task.c"]
+        PidTask["tasks/motor_pid_task.c"]
         PwmSetup["configure_pwm"]
         EncoderSetup["configure_encoders"]
         MotorPidTask["motor_pid_task"]

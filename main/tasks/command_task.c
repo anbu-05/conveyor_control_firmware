@@ -242,9 +242,6 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        if ((motor->target_speed < 0 && speed > 0) || (motor->target_speed > 0 && speed < 0)) {
-            motor->pwm = 0;
-        }
         motor->target_speed = speed;
         motor->speed_control = true;
         xSemaphoreGive(motor_mutex);

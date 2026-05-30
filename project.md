@@ -16,9 +16,13 @@ Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task 
 
 Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
 
-Added a combined motor PID task. `motor_pid_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, updates the speed controller when enabled, and writes direction GPIO plus LEDC PWM hardware directly.
+Added a combined motor PID task. `motor_pid_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, updates the speed controller when enabled, and writes direction GPIO plus LEDC PWM hardware directly. Startup speed averaging divides by the number of real samples collected so the first few samples are not biased low.
 
-Speed control now uses direct P/D speed control into a target PWM. `motor_pid_task` calculates speed error, applies `speed_kp` and `speed_kd`, clamps the target PWM to `CONVEYOR_SPEED_PID_PWM_MAX`, then slews actual `M0.pwm` toward that target by `CONVEYOR_PWM_SLEW_STEP` each 20 ms tick. Motor direction comes only from the sign of `target_speed`.
+Renamed the motor PID source file to `main/tasks/motor_pid_task.c`. Inside it, `update_motor_speed_control()` owns the speed-control math and shared motor PWM/direction request updates, while `apply_motor_output()` owns the final GPIO/LEDC hardware writes.
+
+Speed control now uses measured speed-to-PWM feed-forward plus P/D trim. `motor_pid_task` looks up a base PWM from the target speed, calculates speed error, applies `speed_kp` and tick-normalized `speed_kd`, clamps the requested PWM to `CONVEYOR_SPEED_PID_PWM_MAX`, then slews actual `M0.pwm` toward that request by `CONVEYOR_PWM_SLEW_STEP` each 20 ms tick. Motor direction comes from the sign of `target_speed`, but reversals first ramp PWM down to zero before changing the direction GPIO.
+
+The current base PWM table was measured manually: `0->0`, `8->360`, `16->1040`, `24->1650`, `32->2270`, `48->3490`, `64->4670`, `72->5340`, `80->6050`, `88->6570`, `96->7230`, `104->7890`, `112->8590`, `120->9260`, `128->9870`. The code linearly interpolates between those points.
 
 Conveyor jobs now only request fixed-direction run/stop for a named motor. `start_motor("M0")` uses `CONVEYOR_MOTOR_FORWARD_DIRECTION` and runtime `run_speed_counts_per_sec`. Normal TX/RX completion uses `stop_motor("M0")`, which sets target speed to zero and lets `motor_pid_task` ramp down. Errors, emergency stops, and explicit serial stops still use immediate stop behavior.
 
@@ -105,7 +109,7 @@ CONFIG speed_kd 0.000
 - `main/shared/app_state.c`: Motor table, sensor table, shared mutex globals, console printing, and motor lookup.
 - `main/tasks/command_task.c`: Strict command parser and `microrl_task`.
 - `main/tasks/motor_task.c`: LEDC/direction GPIO setup.
-- `main/tasks/pid_task.c`: Combined motor PID task that reads PCNT, calculates speed, controls PWM, and writes motor hardware.
+- `main/tasks/motor_pid_task.c`: Combined motor PID task that reads PCNT, calculates speed, controls PWM, and writes motor hardware.
 - `main/tasks/mqtt_task.h`: MQTT setup, status task, and publishing API.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON parsing, command queue submission, and status publishing.
 - `main/tasks/sensor_task.c`: Sensor GPIO setup and `sensor_reader_task`.
@@ -251,7 +255,7 @@ MQTT defaults:
 - `mqtt_event_handler`: receives high-level JSON commands and sends conveyor commands to the job queue.
 - `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
 - `conveyor_job_task`: owns the TX/RX state machine and submits speed/stop requests to the motor state.
-- `motor_pid_task`: reads PCNT, calculates smoothed speed, calculates P/D target PWM, slews actual PWM toward it, and writes direction GPIO plus LEDC PWM hardware.
+- `motor_pid_task`: reads PCNT, calculates smoothed speed, calculates a feed-forward base PWM plus P/D trim, slews actual PWM toward it, and writes direction GPIO plus LEDC PWM hardware.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
 - `console_mutex`: keeps command responses and sensor event lines from interleaving.
@@ -292,8 +296,8 @@ Current high-level job states:
 - Encoder PCNT uses full x4 quadrature counting.
 - Encoder PCNT uses a 1000 ns hardware glitch filter to reject very short noise pulses.
 - PID speed control currently has P and optional D terms. Integral control is not implemented yet.
-- P/D output calculates target PWM, and actual PWM changes by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
-- Speed measurement uses a 5-sample moving average.
+- Speed control uses a measured speed/PWM table plus P/D trim. Actual PWM changes by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
+- Speed measurement uses a 5-sample moving average without low startup bias.
 - Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.
 
 ## Next Useful Commands

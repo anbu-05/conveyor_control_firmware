@@ -3,9 +3,9 @@ stateDiagram
     microrl: microrl_task
     sensor_controller: sensor_reader_task
     statemachine: conveyor_job_task
-    motor_controller: motor_controller_task
-    PID_controller: future PID controller
-    encoders: future encoders
+    motor_controller: motor_pid_task
+    speed_controller: speed controller
+    encoders: quadrature encoder
     sensors: S0/S1 BGS sensors
     motors: MD30C + motor
 
@@ -20,6 +20,6 @@ stateDiagram
     sensors --> sensor_controller
     encoder_reader: encoder_reader
     encoders --> encoder_reader
-    encoder_reader --> PID_controller
-    PID_controller --> motor_controller
-    motor_controller --> PID_controller
+    encoder_reader --> speed_controller
+    speed_controller --> motor_controller
+    motor_controller --> speed_controller

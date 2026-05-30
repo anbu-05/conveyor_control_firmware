@@ -116,6 +116,8 @@ Effect:
 - Sets `M0.target_speed` to `100`.
 - Enables `M0.speed_control`.
 - The motor PID task reads PCNT, calculates current speed, and writes PWM/direction to hardware.
+- The speed controller estimates base PWM from the target speed, then P/D trims around it.
+- If the target speed changes sign, PWM ramps down to zero before the direction GPIO changes.
 
 Success output:
 
@@ -174,6 +176,7 @@ Effect:
 
 - Saves `speed_kd` to NVS.
 - The value is stored internally as thousandths.
+- The D term is normalized to the 20 ms motor PID tick used by this firmware.
 - Set `speed_kd` to `0.000` to disable D control.
 
 Success output:

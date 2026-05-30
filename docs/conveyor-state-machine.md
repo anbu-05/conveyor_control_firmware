@@ -457,6 +457,8 @@ use `stop_all_motors()` for an immediate stop.
 
 The `motor_pid_task` reads encoder PCNT, calculates speed, updates the simple
 speed controller, and writes the actual direction GPIO and LEDC PWM hardware.
+The speed controller estimates a base PWM from the target speed, trims it with
+P/D correction, and slews the actual PWM toward that request.
 
 ## Status Output
 

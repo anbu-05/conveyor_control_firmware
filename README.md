@@ -217,7 +217,7 @@ idf.py flash monitor
 - `main/shared/app_state.c`: shared motor/sensor state, console printing, motor lookup.
 - `main/tasks/command_task.c`: microrl serial command task and command handling.
 - `main/tasks/motor_task.c`: motor PWM/direction setup.
-- `main/tasks/pid_task.c`: combined motor PID task, encoder count reading, speed calculation, and motor output.
+- `main/tasks/motor_pid_task.c`: combined motor PID task, encoder count reading, speed calculation, and motor output.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON command parsing, MQTT status task, and feedback publishing.
 - `main/tasks/sensor_task.c`: sensor GPIO setup and polling task.
 - `main/tasks/encoder_task.c`: encoder PCNT setup.
@@ -230,8 +230,11 @@ idf.py flash monitor
 - Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
 - P/D speed control is implemented in `motor_pid_task`.
 - Speed control direction follows the target speed sign.
-- P/D output calculates a target PWM, and `motor.pwm` slews toward it by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
-- Speed measurement uses a 5-sample moving average.
+- A measured speed/PWM table estimates the base PWM, then P/D trims around that base request.
+- The measured table maps PWM `8..128` to about `360..9870` encoder counts/sec and interpolates between points.
+- `motor.pwm` slews toward the requested PWM by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
+- Direction reversals ramp PWM down to zero before changing the direction GPIO.
+- Speed measurement uses a 5-sample moving average without low startup bias.
 - Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
 - Encoder filtering, zeroing, MQTT publishing, I control, and position control are not implemented yet.
