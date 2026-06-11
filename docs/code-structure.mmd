@@ -1,96 +1,52 @@
 stateDiagram-v2
     direction TB
 
-    state "main/" as Main {
-        direction LR
-        MainC: main.c
-        AppMain: app_main
+    state "main/\nApp startup and task launch" as Main {
+        MainC: main.c\nCreates mutexes, configures hardware, starts tasks
     }
 
-    state "main/config/" as Config {
-        direction LR
-        ConfigH: config.h defaults
-        RuntimeH: runtime_config.h API
-        RuntimeC: runtime_config.c NVS-backed values
+    state "main/config/\nHardcoded defaults and runtime settings" as Config {
+        ConfigH: config.h\nCompile-time IDs, pins, timeouts, MQTT defaults
+        RuntimeH: runtime_config.h\nPublic getter/setter API
+        RuntimeC: runtime_config.c\nLoads, validates, saves NVS values
     }
 
-    state "main/shared/" as Shared {
-        direction LR
-        AppStateH: app_state.h shared types/API
-        AppStateC: app_state.c shared tables/helpers
-        Motors: motors[] M0
-        Sensors: sensors[] S0/S1
+    state "main/shared/\nCommon state used across tasks" as Shared {
+        AppStateH: app_state.h\nShared structs, globals, and task prototypes
+        AppStateC: app_state.c\nMotor/sensor tables and helper functions
     }
 
-    state "main/tasks/" as Tasks {
-        direction LR
-        CommandTask: command_task.c microrl_task
-        SensorTask: sensor_task.c sensor_reader_task
-        MotorTask: motor_task.c PWM setup
-        EncoderTask: encoder_task.c PCNT setup
-        MotorPidTask: motor_pid_task.c motor_pid_task
-        MqttTask: mqtt_task.c mqtt_status_task
+    state "main/tasks/\nFreeRTOS task modules and hardware setup" as Tasks {
+        CommandTask: command_task.c\nStrict serial command parser
+        SensorTask: sensor_task.c\nPolls S0/S1 and prints sensor events
+        EncoderTask: encoder_task.c\nConfigures PCNT quadrature counting
+        MotorTask: motor_task.c\nConfigures PWM and direction GPIO
+        MotorPidTask: motor_pid_task.c\nReads encoder speed and drives motor output
+        MqttTask: mqtt_task.c/h\nHandles MQTT commands, feedback, tray status
     }
 
-    state "main/conveyor/" as Conveyor {
-        direction LR
-        ConveyorH: conveyor_job.h commands/states/status
-        ConveyorC: conveyor_job.c conveyor_job_task
-        ConveyorQueue: conveyor_cmd_queue
-        ConveyorStates: IDLE/TX/RX/DONE/ERROR/ESTOP
+    state "main/conveyor/\nHigh-level tray transfer logic" as Conveyor {
+        ConveyorH: conveyor_job.h\nCommand, state, and status types
+        ConveyorC: conveyor_job.c\nTX/RX/ERROR/ESTOP state machine
     }
 
-    state "components/microrl/" as Components {
-        direction LR
-        MicrorlComponent: microrl command parser
+    state "components/microrl/\nVendored serial line parser" as Microrl {
+        MicrorlH: microrl.h\nParser API
+        MicrorlC: microrl.c\nLine editing and command dispatch
     }
 
-    state "Hardware and network APIs" as Platform {
-        direction LR
-        GpioLedc: ESP-IDF GPIO/LEDC
-        Pcnt: ESP-IDF PCNT
-        WifiMqtt: ESP-IDF WiFi/MQTT
-        Nvs: ESP-IDF NVS
+    state "ESP-IDF\nPlatform drivers and services" as EspIdf {
+        GpioLedc: GPIO/LEDC\nSensor pins and motor PWM
+        Pcnt: PCNT\nEncoder counting
+        WifiMqtt: WiFi/MQTT\nNetwork control channel
+        Nvs: NVS\nSaved runtime config
     }
 
     [*] --> Main
-
-    MainC --> AppMain
-    AppMain --> Config: load runtime config
-    AppMain --> Shared: create mutexes/use tables
-    AppMain --> Tasks: configure hardware and start tasks
-    AppMain --> Conveyor: create job queue/start job task
-
-    ConfigH --> RuntimeC
-    RuntimeH --> RuntimeC
-    RuntimeC --> Nvs
-
-    AppStateH --> AppStateC
-    AppStateC --> Motors
-    AppStateC --> Sensors
-
-    CommandTask --> MicrorlComponent
-    CommandTask --> Shared
-    CommandTask --> Conveyor
-    CommandTask --> Config
-
-    SensorTask --> Shared
-    SensorTask --> GpioLedc
-    MotorTask --> Shared
-    MotorTask --> GpioLedc
-    EncoderTask --> Shared
-    EncoderTask --> Pcnt
-    MotorPidTask --> Shared
-    MotorPidTask --> Config
-    MotorPidTask --> GpioLedc
-    MotorPidTask --> Pcnt
-    MqttTask --> Conveyor
-    MqttTask --> Config
-    MqttTask --> WifiMqtt
-
-    ConveyorH --> ConveyorC
-    ConveyorC --> ConveyorQueue
-    ConveyorC --> ConveyorStates
-    ConveyorC --> Shared
-    ConveyorC --> Config
-    ConveyorC --> MqttTask
+    Main --> Config
+    Main --> Shared
+    Main --> Tasks
+    Main --> Conveyor
+    Tasks --> Microrl
+    Tasks --> EspIdf
+    Conveyor --> Shared

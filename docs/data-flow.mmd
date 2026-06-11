@@ -1,0 +1,42 @@
+stateDiagram-v2
+    direction TB
+
+    state "External data\nValues entering the firmware" as ExternalData {
+        SerialText: serial text\nsetmotor, setspeed, jobtx, jobrx, config
+        MqttJson: MQTT JSON\nTX/RX/emergency/clear commands
+        SensorLevels: sensor GPIO levels\nS0/S1 raw active-low readings
+        EncoderCounts: encoder counts\nPCNT count changes from M0
+    }
+
+    state "Parsing and sampling\nRaw data becomes typed firmware data" as InputData {
+        SerialCommand: parsed serial command\nCommand name, args, and values
+        MqttCommand: conveyor command\nSTART_TX, START_RX, ESTOP, CLEAR_ERROR
+        SensorValues: sensor values\nLatest S0/S1 stored in sensors[]
+        SpeedValue: measured speed\nCounts/sec from encoder deltas
+    }
+
+    state "Shared data\nState read by multiple tasks" as SharedData {
+        RuntimeValues: runtime config\nSpeed, gains, timeouts, status period
+        ConveyorStatus: conveyor status\nState, elapsed time, error, S0, S1
+        TrayStatus: tray status\nhas_tray from S0 or S1 detected
+        MotorValues: motor state\nTarget speed, PWM, direction, position
+    }
+
+    state "Control decisions\nData used to choose actions" as Decisions {
+        JobDecision: conveyor job logic\nChecks commands, tray state, timeouts
+        SpeedDecision: speed controller\nUses target speed, measured speed, gains
+    }
+
+    state "Output data\nValues leaving firmware logic" as OutputData {
+        MotorOutput: motor output\nDirection GPIO and LEDC PWM duty
+        SerialLines: serial lines\nREADY, OK, ERR, EVENT, CONFIG
+        MqttMessages: MQTT messages\nFeedback JSON and tray status JSON
+    }
+
+    [*] --> ExternalData
+    ExternalData --> InputData
+    InputData --> SharedData
+    SharedData --> Decisions
+    Decisions --> SharedData
+    Decisions --> OutputData
+    SharedData --> OutputData

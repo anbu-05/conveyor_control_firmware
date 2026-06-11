@@ -52,7 +52,44 @@ MQTT feedback now includes `state_elapsed_ms`, the elapsed milliseconds since th
 
 Current sensor interpretation is active-low: raw GPIO `0` means tray detected, and raw GPIO `1` means no tray.
 
-Rebuilt `docs/architecture.mmd` and `docs/code-structure.mmd` as cleaner top-to-bottom `stateDiagram-v2` diagrams. The architecture diagram now separates external inputs, readers, shared control, motor control, and outputs. The code-structure diagram now shows source ownership by folder instead of function-level wiring.
+Rebuilt `docs/architecture.mmd` and `docs/code-structure.mmd` as cleaner top-to-bottom `stateDiagram-v2` diagrams. The architecture diagram now separates external inputs, readers, shared control, motor control, and outputs. The code-structure diagram is now a very small source-area map instead of function-level wiring.
+
+Added file-level folder detail to `docs/code-structure.mmd` while keeping the same small set of high-level arrows.
+
+Added brief purpose labels under each `docs/code-structure.mmd` block and file item so the diagram explains what each source area does without adding more arrows.
+
+Reworked `docs/architecture.mmd` with the same layered Mermaid method: broad runtime blocks first, brief purpose labels inside each block, and only the main data/control arrows.
+
+Added `docs/data-flow.mmd` as a simple top-to-bottom data-flow diagram showing external inputs, parsed/sampled values, shared state, control decisions, and output data.
+
+Started design discussion for an SD-card logging system that should stay reusable across similar motor-control projects, including Kinco, CubeMars, and DC-motor variants. No logging code has been added yet.
+
+SD logging design note: company code commonly uses ESP-IDF `ESP_LOG*` macros, so the SD logging design should support ESP_LOG capture for human-readable firmware diagnostics. Structured CSV/event files should still exist separately for motor/sensor/job analysis because ESP_LOG text is not a stable data format.
+
+Gantry logging reference checked: `/home/anbu/Z/projects/internship/antropi/gantry/Kinco_Gantry` uses `ESP_LOG*` heavily for firmware diagnostics and its `project.md` plans SD logging as a separate logger task with uptime timestamps, structured events, and optional `ESP_LOG*` tee/capture. It does not currently contain a finished SD logger implementation. `/home/anbu/Z/projects/internship/antropi/gantry/kinco_control_firmware` is only a small GPIO smoke test using `printf`, so it is not a useful logging reference.
+
+Detailed gantry logging pattern: app files include `esp_log.h`, define `static const char *TAG = "module"`, and use `ESP_LOGI/W/E(TAG, ...)` for state transitions, MQTT connect/disconnect/RX, CANopen SDO/PDO setup, drive reconnects, command rejections, homing progress, limit hits, and persistence failures. Raw `printf` remains in `main/canopen_listener.c` for CAN frame dumps, which means SD log capture should either convert that listener to `ESP_LOG*` or keep a separate raw-frame logging path.
+
+## Mermaid Diagram Update Methodology
+
+For future `.mmd` updates, start with the simplest useful diagram first.
+Use `stateDiagram-v2` with `direction TB` unless there is a clear reason not to.
+Keep inputs or startup blocks near the top, shared/control blocks in the middle,
+and outputs/platform blocks near the bottom.
+
+Add detail slowly in layers:
+
+1. Start with only the main blocks and a few high-level arrows.
+2. Add file or folder names inside existing blocks before adding new arrows.
+3. Add short purpose labels under blocks or files only after the structure is readable.
+4. Avoid per-function or per-call dependency wiring unless specifically needed.
+5. If the diagram starts getting crossed lines or long horizontal sprawl, remove arrows first instead of adding layout tricks.
+
+Render-check Mermaid changes with `mmdc`, usually through:
+
+```text
+npx -p @mermaid-js/mermaid-cli mmdc -i docs/<file>.mmd -o /tmp/<file>.png
+```
 
 Serial output is now token-based for a Python wrapper:
 
@@ -121,6 +158,7 @@ CONFIG speed_kd 0.000
 - `components/microrl/`: Small vendored microrl-style command parser used by this app.
 - `docs/architecture.mmd`: Mermaid chart of the current command and motor-control flow.
 - `docs/code-structure.mmd`: Mermaid chart of files, functions, callbacks, and shared state.
+- `docs/data-flow.mmd`: Mermaid chart of command, sensor, encoder, runtime config, motor, serial, and MQTT data flow.
 - `docs/serial-debug-commands.md`: Detailed microrl command reference.
 - `docs/mqtt-control-commands.md`: Detailed MQTT topic, payload, and feedback reference.
 - `docs/mqtt-implementation.md`: Detailed MQTT implementation and task-flow reference.

@@ -1,14 +1,25 @@
-fix the messy code structure mermaid chart
+we need the other logging files to work based on what's on the config
+make sure esp's own ms time and epoch time is in every config file
 
-the code is very baren and hard to read through right now, add some comments in all the codes to make it easy to read through and understand
 
-download mosquito and test mqtt
-
----
-
-in tx, in the case where the box is still in s0 instead of s1, the conveyor should move the box slowly till it's aligned with s1, which is the ideal case
-
+implement the code, and make a doc based on the implemented library. 
 ---
 
 go through this project. read through project.md for AI context and readme.md for human context. we need to add a thread that uses pcnt to 
+
+---
+8 - 360
+16 - 1040
+24 - 1650
+32 - 2270
+48 - 3490
+64 - 4670
+72 - 5340
+80 - 6050
+88 - 6570
+96 - 7230
+104 - 7890
+112 - 8590
+120 - 9260
+128 - 9870
 
