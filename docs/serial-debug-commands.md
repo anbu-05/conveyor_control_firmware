@@ -44,14 +44,25 @@ Arguments:
 
 - `M0`: the only configured motor name.
 - `128`: PWM value. Must be `0` to `255`.
-- `1`: direction value. Must be `0` or `1`.
+- `1`: BTS7960 direction value. Must be `0` or `1`.
 
 Effect:
 
 - Sets `M0.pwm` to `128`.
 - Sets `M0.direction` to `1`.
 - Disables speed control for `M0`.
-- The motor controller task later writes those values to GPIO/LEDC.
+- The motor PID task later enables `R_EN` and `L_EN`, then writes duty to
+  `RPWM` for direction `1` or `LPWM` for direction `0`.
+- If PWM is `0`, both enable pins are low and both PWM channels are `0`.
+
+Current placeholder BTS7960 pinout in `main/config/config.h`:
+
+```text
+RPWM = GPIO 7
+LPWM = GPIO 6
+R_EN = GPIO 17
+L_EN = GPIO 18
+```
 
 Success output:
 
@@ -115,9 +126,11 @@ Effect:
 
 - Sets `M0.target_speed` to `100`.
 - Enables `M0.speed_control`.
-- The motor PID task reads PCNT, calculates current speed, and writes PWM/direction to hardware.
+- The motor PID task reads PCNT, calculates current speed, and writes BTS7960
+  RPWM/LPWM/enable output to hardware.
 - The speed controller estimates base PWM from the target speed, then P/D trims around it.
-- If the target speed changes sign, PWM ramps down to zero before the direction GPIO changes.
+- If the target speed changes sign, PWM ramps down to zero before switching
+  from RPWM to LPWM or LPWM to RPWM.
 
 Success output:
 
@@ -407,6 +420,10 @@ Field order:
 ```text
 MOTOR <motor> <pwm> <direction> <position> <target_speed> <current_speed> <speed_control>
 ```
+
+For BTS7960 output, direction `1` means RPWM carries duty and direction `0`
+means LPWM carries duty. The enable pins are driven high only while PWM is
+nonzero.
 
 Error outputs:
 

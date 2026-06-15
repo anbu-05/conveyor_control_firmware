@@ -35,11 +35,14 @@ typedef struct {
     int current_speed;
     bool pos_control;
     bool speed_control;
-    gpio_num_t pwm_gpio;
-    gpio_num_t dir_gpio;
+    gpio_num_t rpwm_gpio;
+    gpio_num_t lpwm_gpio;
+    gpio_num_t ren_gpio;
+    gpio_num_t len_gpio;
     gpio_num_t encoder_a_gpio;
     gpio_num_t encoder_b_gpio;
-    ledc_channel_t ledc_channel;
+    ledc_channel_t rpwm_channel;
+    ledc_channel_t lpwm_channel;
     pcnt_unit_handle_t pcnt_unit;
 } motor_t;
 

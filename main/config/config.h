@@ -22,7 +22,12 @@
 #define CONVEYOR_SPEED_KD_MILLI 10                    /* Default speed D gain scaled by 1000 and normalized to a 20 ms PID tick. */
 #define CONVEYOR_PWM_SLEW_STEP 1                      /* Max PWM change per 20 ms motor PID tick. */
 #define CONVEYOR_SPEED_PID_PWM_MAX 128                /* Highest PWM that speed control may command. */
-#define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* MD30C direction level used for normal conveyor travel. */
+#define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* BTS7960 direction used for normal conveyor travel: 1=RPWM, 0=LPWM. */
+
+#define CONVEYOR_M0_BTS_RPWM_GPIO 7                   /* Placeholder BTS7960 RPWM pin; update for final hardware. */
+#define CONVEYOR_M0_BTS_LPWM_GPIO 6                   /* Placeholder BTS7960 LPWM pin; update for final hardware. */
+#define CONVEYOR_M0_BTS_REN_GPIO 17                   /* Placeholder BTS7960 R_EN pin; update for final hardware. */
+#define CONVEYOR_M0_BTS_LEN_GPIO 18                   /* Placeholder BTS7960 L_EN pin; update for final hardware. */
 
 #define CONVEYOR_JOB_TASK_STACK_SIZE 4096             /* FreeRTOS stack size for the conveyor state-machine task. */
 #define CONVEYOR_JOB_TASK_PRIORITY 5                  /* FreeRTOS priority for the conveyor state-machine task. */

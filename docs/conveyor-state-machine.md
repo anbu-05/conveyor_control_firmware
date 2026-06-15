@@ -456,7 +456,9 @@ motor PID task ramps target speed to zero. Errors and emergency stops still
 use `stop_all_motors()` for an immediate stop.
 
 The `motor_pid_task` reads encoder PCNT, calculates speed, updates the simple
-speed controller, and writes the actual direction GPIO and LEDC PWM hardware.
+speed controller, and writes the actual BTS7960 enable plus RPWM/LPWM LEDC
+hardware. Direction `1` drives RPWM, direction `0` drives LPWM, and both
+enable pins are low when PWM is zero.
 The speed controller estimates a base PWM from the target speed, trims it with
 P/D correction, and slews the actual PWM toward that request.
 

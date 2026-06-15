@@ -34,7 +34,7 @@ stateDiagram-v2
 
     state "Outputs" as Outputs {
         direction LR
-        MotorHw: MD30C PWM/direction and motor
+        MotorHw: BTS7960 RPWM/LPWM/enable and motor
         SerialOut: serial OK/ERR/EVENT lines
         MqttOut: MQTT feedback and tray status
     }
