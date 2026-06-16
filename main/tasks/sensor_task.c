@@ -2,6 +2,7 @@
 
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "esp_log.h"
 
 /*
  * Configures all binary sensor pins as plain inputs.
@@ -40,10 +41,17 @@ void sensor_reader_task(void *arg)
             value = gpio_get_level(sensors[i].gpio);
 
             if (value != sensors[i].last_value) {
+                int last_value = sensors[i].last_value;
                 sensors[i].value = value;
+                ESP_LOGI("SDLOG_INPUT",
+                         "id=%s value=%d last_value=%d active=%d",
+                         sensors[i].name,
+                         value,
+                         last_value,
+                         value == 0 ? 1 : 0);
 
                 if (sensor_watch_enabled) {
-                    console_printf("EVENT SENSOR %s %d %d\r\n", sensors[i].name, sensors[i].last_value, value);
+                    console_printf("EVENT SENSOR %s %d %d\r\n", sensors[i].name, last_value, value);
                 }
 
                 sensors[i].last_value = value;

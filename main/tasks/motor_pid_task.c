@@ -7,6 +7,7 @@
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "runtime_config.h"
 
 #define SPEED_AVG_SAMPLE_COUNT 5
@@ -189,9 +190,14 @@ void motor_pid_task(void *arg)
     int direction = 0;
     int watch_ticks = 0;
     int watch_period_ticks = ENCODER_WATCH_DELAY_MS / MOTOR_PID_DELAY_MS;
+    int sdlog_ticks = 0;
+    int sdlog_period_ticks = CONVEYOR_SD_LOG_MOTOR_PERIOD_MS / MOTOR_PID_DELAY_MS;
 
     if (watch_period_ticks < 1) {
         watch_period_ticks = 1;
+    }
+    if (sdlog_period_ticks < 1) {
+        sdlog_period_ticks = 1;
     }
 
     ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &last_count));
@@ -228,6 +234,28 @@ void motor_pid_task(void *arg)
             if (encoder_watch_enabled && encoder_watch_motor == motor) {
                 console_printf("EVENT ENCODER %s %d %d\r\n", motor->name, count, speed);
             }
+        }
+
+        sdlog_ticks++;
+        if (sdlog_ticks >= sdlog_period_ticks) {
+            int target_speed = 0;
+            int speed_control = 0;
+
+            sdlog_ticks = 0;
+            xSemaphoreTake(motor_mutex, portMAX_DELAY);
+            target_speed = motor->target_speed;
+            speed_control = motor->speed_control ? 1 : 0;
+            xSemaphoreGive(motor_mutex);
+
+            ESP_LOGI("SDLOG_ACT",
+                     "id=%s type=dc target_speed=%d current_speed=%d pwm=%d direction=%d position=%d mode=%s",
+                     motor->name,
+                     target_speed,
+                     speed,
+                     pwm,
+                     direction,
+                     count,
+                     speed_control ? "speed" : "pwm");
         }
 
         vTaskDelay(pdMS_TO_TICKS(MOTOR_PID_DELAY_MS));

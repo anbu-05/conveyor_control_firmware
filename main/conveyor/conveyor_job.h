@@ -25,6 +25,7 @@ typedef enum {
 
 typedef struct {
     conveyor_cmd_type_t type;
+    uint32_t command_id;
 } conveyor_cmd_t;
 
 typedef struct {

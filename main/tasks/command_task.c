@@ -6,33 +6,52 @@
 
 #include "config.h"
 #include "conveyor_job.h"
+#include "esp_log.h"
 #include "esp_err.h"
 #include "microrl.h"
 #include "runtime_config.h"
+#include "sd_event_logger.h"
 
-static void send_job_command(conveyor_cmd_t command, const char *ok_text)
+static void log_serial_command(uint32_t command_id, const char *text, const char *result, const char *error)
 {
+    ESP_LOGI("SDLOG_CMD",
+             "command_id=%lu source=serial topic=serial payload=%s result=%s error=%s",
+             (unsigned long)command_id,
+             text,
+             result,
+             error);
+}
+
+static void send_job_command(conveyor_cmd_t command, const char *ok_text, const char *command_text)
+{
+    command.command_id = sdlog_next_command_id();
+
     if ((command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) &&
         !conveyor_job_is_idle()) {
+        log_serial_command(command.command_id, command_text, "rejected", "JOB_BUSY");
         console_print("ERR JOB_BUSY\r\n");
         return;
     }
 
     if (command.type == CONVEYOR_CMD_START_TX && !conveyor_job_has_tray()) {
+        log_serial_command(command.command_id, command_text, "rejected", "NO_TRAY");
         console_print("ERR NO_TRAY\r\n");
         return;
     }
 
     if (command.type == CONVEYOR_CMD_START_RX && conveyor_job_has_tray()) {
+        log_serial_command(command.command_id, command_text, "rejected", "TRAY_PRESENT");
         console_print("ERR TRAY_PRESENT\r\n");
         return;
     }
 
     if (!conveyor_job_send_command(command)) {
+        log_serial_command(command.command_id, command_text, "rejected", "JOB_QUEUE");
         console_print("ERR JOB_QUEUE\r\n");
         return;
     }
 
+    log_serial_command(command.command_id, command_text, "accepted", "none");
     console_print(ok_text);
 }
 
@@ -333,8 +352,10 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
+        command.command_id = sdlog_next_command_id();
         stop_all_motors();
         (void)conveyor_job_send_command(command);
+        log_serial_command(command.command_id, "stop", "accepted", "none");
 
         console_print("OK STOP\r\n");
         return 0;
@@ -349,7 +370,7 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         command.type = CONVEYOR_CMD_START_TX;
-        send_job_command(command, "OK JOBTX\r\n");
+        send_job_command(command, "OK JOBTX\r\n", "jobtx");
         return 0;
     }
 
@@ -362,7 +383,7 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         command.type = CONVEYOR_CMD_START_RX;
-        send_job_command(command, "OK JOBRX\r\n");
+        send_job_command(command, "OK JOBRX\r\n", "jobrx");
         return 0;
     }
 
@@ -376,7 +397,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        send_job_command(command, "OK ESTOP\r\n");
+        send_job_command(command, "OK ESTOP\r\n", "estop");
         return 0;
     }
 
@@ -390,7 +411,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        send_job_command(command, "OK CLEARERROR\r\n");
+        send_job_command(command, "OK CLEARERROR\r\n", "clearerror");
         return 0;
     }
 

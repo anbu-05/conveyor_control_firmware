@@ -62,13 +62,25 @@ Reworked `docs/architecture.mmd` with the same layered Mermaid method: broad run
 
 Added `docs/data-flow.mmd` as a simple top-to-bottom data-flow diagram showing external inputs, parsed/sampled values, shared state, control decisions, and output data.
 
-Started design discussion for an SD-card logging system that should stay reusable across similar motor-control projects, including Kinco, CubeMars, and DC-motor variants. No logging code has been added yet.
+Started design discussion for an SD-card logging system that should stay reusable across similar motor-control projects, including Kinco, CubeMars, and DC-motor variants.
 
 SD logging design note: company code commonly uses ESP-IDF `ESP_LOG*` macros, so the SD logging design should support ESP_LOG capture for human-readable firmware diagnostics. Structured CSV/event files should still exist separately for motor/sensor/job analysis because ESP_LOG text is not a stable data format.
 
 Gantry logging reference checked: `/home/anbu/Z/projects/internship/antropi/gantry/Kinco_Gantry` uses `ESP_LOG*` heavily for firmware diagnostics and its `project.md` plans SD logging as a separate logger task with uptime timestamps, structured events, and optional `ESP_LOG*` tee/capture. It does not currently contain a finished SD logger implementation. `/home/anbu/Z/projects/internship/antropi/gantry/kinco_control_firmware` is only a small GPIO smoke test using `printf`, so it is not a useful logging reference.
 
 Detailed gantry logging pattern: app files include `esp_log.h`, define `static const char *TAG = "module"`, and use `ESP_LOGI/W/E(TAG, ...)` for state transitions, MQTT connect/disconnect/RX, CANopen SDO/PDO setup, drive reconnects, command rejections, homing progress, limit hits, and persistence failures. Raw `printf` remains in `main/canopen_listener.c` for CAN frame dumps, which means SD log capture should either convert that listener to `ESP_LOG*` or keep a separate raw-frame logging path.
+
+Implemented the first reusable SD event logger component in `components/sd_event_logger`. It mounts a SPI SD card, creates `/sdcard/<device_type>/<device_id>/session_000001/`, captures normal `ESP_LOG*` output into `system.log`, parses standard `SDLOG_*` tags into `timeline.csv`, `actuators.csv`, and `inputs.csv`, tracks broker time from `all/time`, and exposes simple custom CSV helpers for `custom/<name>.csv`.
+
+Integrated the logger into this conveyor firmware. SD SPI config is hardcoded in `main/config/config.h`: CS GPIO11, MOSI GPIO12, SCLK GPIO13, MISO GPIO14. MQTT subscribes to `all/time` and accepts strict epoch-second payloads. MQTT and serial job commands now receive local `command_id` values. Conveyor state changes, job errors, emergency stops, sensor changes, and 100 ms motor snapshots are emitted through `SDLOG_*` ESP log tags.
+
+Verified with `source /home/anbu/.espressif/v6.0.1/esp-idf/export.sh && idf.py build`. The build passes, but the app partition is tight: `conveyor.bin` leaves only about 3% free space in the smallest app partition.
+
+Flash test on 2026-06-11: `source /home/anbu/.espressif/v6.0.1/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash` succeeded when run outside the sandbox. The first sandboxed attempt failed because `/dev/ttyACM0` disappeared during USB reset/re-enumeration. The flashed target was an ESP32-S3 on `/dev/ttyACM0`; esptool verified bootloader, partition table, and `conveyor.bin`, then hard reset the board. The app partition is still tight at about 3% free space.
+
+VS Code ESP-IDF extension note on 2026-06-11: terminal ESP-IDF setup has OpenOCD `v0.12.0-esp32-20260304` at `/home/anbu/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260304/openocd-esp32/bin/openocd`, so OpenOCD itself is installed and new enough. The workspace currently has `"idf.flashType": "JTAG"` in `.vscode/settings.json`; that makes the small flash button use OpenOCD. For this ESP32-S3 USB Serial/JTAG serial-flash workflow, use UART flashing instead of JTAG unless actual JTAG debugging is needed.
+
+Follow-up for JTAG flashing: user wants to keep JTAG flashing. VS Code ESP-IDF extension log shows `openOCDVersionValidator failed unexpectedly - min:v0.10.0-esp32-20201125, curr:` followed by `Invalid OpenOCD bin path or access is denied for the user`. That means the extension is seeing an empty/bad OpenOCD path or environment, even though the terminal ESP-IDF environment finds the correct OpenOCD. Best next step is to run `ESP-IDF: Select Current ESP-IDF Version` in VS Code and select `/home/anbu/.espressif/v6.0.1/esp-idf`, then reload VS Code and test `ESP-IDF: OpenOCD Manager`.
 
 ## Mermaid Diagram Update Methodology
 

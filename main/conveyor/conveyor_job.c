@@ -5,6 +5,7 @@
 
 #include "app_state.h"
 #include "config.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -20,6 +21,7 @@ static conveyor_status_t current_status = {
     .s1 = 1,
 };
 static uint32_t state_started_ms;
+static uint32_t current_command_id;
 
 const char *conveyor_state_name(conveyor_state_t state)
 {
@@ -135,8 +137,16 @@ static void publish_status(void)
 
 static void set_state(conveyor_state_t state)
 {
+    conveyor_state_t previous_state = current_status.state;
+
     current_status.state = state;
     state_started_ms = now_ms();
+    ESP_LOGI("SDLOG_STATE",
+             "command_id=%lu source=state from=%s to=%s result=ok error=%s",
+             (unsigned long)current_command_id,
+             conveyor_state_name(previous_state),
+             conveyor_state_name(state),
+             current_status.error[0] == '\0' ? "none" : current_status.error);
     publish_status();
 }
 
@@ -149,6 +159,16 @@ static void set_error(const char *error)
 {
     stop_all_motors();
     snprintf(current_status.error, sizeof(current_status.error), "%s", error);
+    ESP_LOGE("SDLOG_ERROR",
+             "command_id=%lu source=job code=%s state=%s",
+             (unsigned long)current_command_id,
+             error,
+             conveyor_state_name(current_status.state));
+    ESP_LOGW("SDLOG_SAFETY",
+             "command_id=%lu source=job event=STOP state=%s text=%s",
+             (unsigned long)current_command_id,
+             conveyor_state_name(current_status.state),
+             error);
     set_state(CONVEYOR_STATE_ERROR);
 }
 
@@ -195,6 +215,10 @@ static void emergency_stop(void)
 {
     stop_all_motors();
     snprintf(current_status.error, sizeof(current_status.error), "ESTOP");
+    ESP_LOGW("SDLOG_SAFETY",
+             "command_id=%lu source=job event=ESTOP state=%s text=emergency_stop",
+             (unsigned long)current_command_id,
+             conveyor_state_name(current_status.state));
     set_state(CONVEYOR_STATE_ESTOP);
 }
 
@@ -208,6 +232,8 @@ static void clear_error(void)
 
 static void handle_command(conveyor_cmd_t command)
 {
+    current_command_id = command.command_id;
+
     if (command.type == CONVEYOR_CMD_START_TX) {
         start_tx();
         return;

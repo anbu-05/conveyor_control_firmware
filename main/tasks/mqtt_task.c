@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "mqtt_client.h"
 #include "runtime_config.h"
+#include "sd_event_logger.h"
 
 static const char *TAG = "ConveyorMQTT";
 
@@ -113,6 +114,17 @@ static void publish_bad_command(const char *error)
     publish_text(message);
 }
 
+static void log_mqtt_command(uint32_t command_id, const char *topic, const char *message, const char *result, const char *error)
+{
+    ESP_LOGI("SDLOG_CMD",
+             "command_id=%lu source=mqtt topic=%s payload=%s result=%s error=%s",
+             (unsigned long)command_id,
+             topic,
+             message,
+             result,
+             error);
+}
+
 static bool reject_if_busy(void)
 {
     if (!conveyor_job_is_idle()) {
@@ -123,75 +135,140 @@ static bool reject_if_busy(void)
     return false;
 }
 
-static void handle_command_message(const char *message)
+static void handle_command_message(const char *topic, const char *message)
 {
     conveyor_cmd_t command;
+    uint32_t command_id = sdlog_next_command_id();
 
     if (strcmp(message, "{\"type\":\"tx\"}") == 0) {
         if (reject_if_busy()) {
+            log_mqtt_command(command_id, topic, message, "rejected", "JOB_BUSY");
             return;
         }
 
         if (!conveyor_job_has_tray()) {
+            log_mqtt_command(command_id, topic, message, "rejected", "NO_TRAY");
             publish_bad_command("NO_TRAY");
             return;
         }
 
         command.type = CONVEYOR_CMD_START_TX;
+        command.command_id = command_id;
         if (!conveyor_job_send_command(command)) {
+            log_mqtt_command(command_id, topic, message, "rejected", "QUEUE_FULL");
             publish_bad_command("QUEUE_FULL");
+        } else {
+            log_mqtt_command(command_id, topic, message, "accepted", "none");
         }
         return;
     }
 
     if (strcmp(message, "{\"type\":\"rx\"}") == 0) {
         if (reject_if_busy()) {
+            log_mqtt_command(command_id, topic, message, "rejected", "JOB_BUSY");
             return;
         }
 
         if (conveyor_job_has_tray()) {
+            log_mqtt_command(command_id, topic, message, "rejected", "TRAY_PRESENT");
             publish_bad_command("TRAY_PRESENT");
             return;
         }
 
         command.type = CONVEYOR_CMD_START_RX;
+        command.command_id = command_id;
         if (!conveyor_job_send_command(command)) {
+            log_mqtt_command(command_id, topic, message, "rejected", "QUEUE_FULL");
             publish_bad_command("QUEUE_FULL");
+        } else {
+            log_mqtt_command(command_id, topic, message, "accepted", "none");
         }
         return;
     }
 
     if (strcmp(message, "{\"type\":\"emergency_stop\"}") == 0) {
         command.type = CONVEYOR_CMD_EMERGENCY_STOP;
+        command.command_id = command_id;
         if (!conveyor_job_send_command(command)) {
+            log_mqtt_command(command_id, topic, message, "rejected", "QUEUE_FULL");
             publish_bad_command("QUEUE_FULL");
+        } else {
+            log_mqtt_command(command_id, topic, message, "accepted", "none");
         }
         return;
     }
 
     if (strcmp(message, "{\"type\":\"clear_error\"}") == 0) {
         command.type = CONVEYOR_CMD_CLEAR_ERROR;
+        command.command_id = command_id;
         if (!conveyor_job_send_command(command)) {
+            log_mqtt_command(command_id, topic, message, "rejected", "QUEUE_FULL");
             publish_bad_command("QUEUE_FULL");
+        } else {
+            log_mqtt_command(command_id, topic, message, "accepted", "none");
         }
         return;
     }
 
+    log_mqtt_command(command_id, topic, message, "rejected", "UNKNOWN_COMMAND");
     publish_bad_command("UNKNOWN_COMMAND");
 }
 
-static void handle_emergency_message(const char *message)
+static void handle_emergency_message(const char *topic, const char *message)
 {
     conveyor_cmd_t command = {
         .type = CONVEYOR_CMD_EMERGENCY_STOP,
     };
+    uint32_t command_id = sdlog_next_command_id();
 
     if (strcmp(message, "STOP") == 0 || strcmp(message, "{\"type\":\"emergency_stop\"}") == 0) {
+        command.command_id = command_id;
         if (!conveyor_job_send_command(command)) {
+            log_mqtt_command(command_id, topic, message, "rejected", "QUEUE_FULL");
             publish_bad_command("QUEUE_FULL");
+        } else {
+            log_mqtt_command(command_id, topic, message, "accepted", "none");
         }
     } else {
+        log_mqtt_command(command_id, topic, message, "rejected", "BAD_EMERGENCY");
         publish_bad_command("BAD_EMERGENCY");
+    }
+}
+
+static bool parse_epoch_seconds(const char *message, uint32_t *epoch)
+{
+    unsigned long value = 0;
+
+    if (message == NULL || epoch == NULL || message[0] == '\0') {
+        return false;
+    }
+
+    for (int i = 0; message[i] != '\0'; i++) {
+        if (message[i] < '0' || message[i] > '9') {
+            return false;
+        }
+        value = (value * 10) + (unsigned long)(message[i] - '0');
+        if (value > 4294967295UL) {
+            return false;
+        }
+    }
+
+    if (value == 0) {
+        return false;
+    }
+
+    *epoch = (uint32_t)value;
+    return true;
+}
+
+static void handle_time_message(const char *topic, const char *message)
+{
+    uint32_t epoch = 0;
+
+    if (parse_epoch_seconds(message, &epoch)) {
+        sdlog_update_epoch(epoch);
+    } else {
+        ESP_LOGW("SDLOG_TIME", "source=mqtt topic=%s result=rejected error=BAD_TIME text=%s", topic, message);
     }
 }
 
@@ -227,13 +304,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CMD, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_EMERGENCY, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY, 0);
+        esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_TIME, 0);
         publish_tray_status(true);
+        ESP_LOGI("SDLOG_MQTT", "source=mqtt result=connected text=connected");
         ESP_LOGI(TAG, "MQTT connected");
         return;
     }
 
     if (event_id == MQTT_EVENT_DISCONNECTED) {
         mqtt_connected = false;
+        ESP_LOGW("SDLOG_MQTT", "source=mqtt result=disconnected text=disconnected");
         ESP_LOGW(TAG, "MQTT disconnected");
         return;
     }
@@ -259,13 +339,18 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     message[message_len] = '\0';
 
     if (strcmp(topic, CONVEYOR_MQTT_TOPIC_CMD) == 0) {
-        handle_command_message(message);
+        handle_command_message(topic, message);
         return;
     }
 
     if (strcmp(topic, CONVEYOR_MQTT_TOPIC_EMERGENCY) == 0 ||
         strcmp(topic, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY) == 0) {
-        handle_emergency_message(message);
+        handle_emergency_message(topic, message);
+        return;
+    }
+
+    if (strcmp(topic, CONVEYOR_MQTT_TOPIC_TIME) == 0) {
+        handle_time_message(topic, message);
     }
 }
 

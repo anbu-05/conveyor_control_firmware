@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #define CONVEYOR_ID "C0"                              /* Public conveyor name used in serial and MQTT messages. */
+#define CONVEYOR_FIRMWARE_VERSION "conveyor-sdlog-v1" /* Firmware/log identity written into SD session metadata. */
 
 #define CONVEYOR_MQTT_ENABLED 1                       /* 1 starts WiFi/MQTT; 0 builds serial-only control. */
 #define CONVEYOR_MQTT_STATUS_ENABLED 1                /* 1 enables periodic MQTT status publishing. */
@@ -15,6 +16,18 @@
 #define CONVEYOR_MQTT_TOPIC_FEEDBACK "conveyor/C0/feedback" /* Per-conveyor job/status feedback topic. */
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency" /* Shared emergency-stop topic for every conveyor. */
 #define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"   /* Tray-present status topic for this conveyor. */
+#define CONVEYOR_MQTT_TOPIC_TIME "all/time"           /* Shared broker time topic. Payload is strict epoch seconds. */
+
+#define CONVEYOR_SD_LOG_ENABLED 1                     /* 1 starts the reusable SD event logger. */
+#define CONVEYOR_SD_LOG_QUEUE_LENGTH 64               /* Number of pending log lines kept in RAM. */
+#define CONVEYOR_SD_LOG_TASK_STACK_SIZE 4096          /* FreeRTOS stack size for SD logger file task. */
+#define CONVEYOR_SD_LOG_TASK_PRIORITY 3               /* FreeRTOS priority for SD logger file task. */
+#define CONVEYOR_SD_LOG_FLUSH_PERIOD_MS 1000          /* Max time between SD file flushes. */
+#define CONVEYOR_SD_LOG_MOTOR_PERIOD_MS 100           /* Period between normal motor telemetry rows. */
+#define CONVEYOR_SD_LOG_SD_CS_GPIO 11                 /* SD SPI chip-select GPIO. */
+#define CONVEYOR_SD_LOG_SD_MOSI_GPIO 12               /* SD SPI MOSI GPIO. */
+#define CONVEYOR_SD_LOG_SD_SCLK_GPIO 13               /* SD SPI clock GPIO. */
+#define CONVEYOR_SD_LOG_SD_MISO_GPIO 14               /* SD SPI MISO GPIO. */
 
 #define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
 #define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */
