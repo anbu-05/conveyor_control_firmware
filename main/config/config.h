@@ -24,10 +24,10 @@
 #define CONVEYOR_SPEED_PID_PWM_MAX 128                /* Highest PWM that speed control may command. */
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* BTS7960 direction used for normal conveyor travel: 1=RPWM, 0=LPWM. */
 
-#define CONVEYOR_M0_BTS_RPWM_GPIO 6                   /* BTS7960 RPWM pin. */
-#define CONVEYOR_M0_BTS_LPWM_GPIO 7                   /* BTS7960 LPWM pin. */
-#define CONVEYOR_M0_BTS_REN_GPIO 15                   /* BTS7960 R_EN pin. */
-#define CONVEYOR_M0_BTS_LEN_GPIO 16                   /* BTS7960 L_EN pin. */
+#define CONVEYOR_M0_BTS_RPWM_GPIO 15                   /* BTS7960 RPWM pin. */
+#define CONVEYOR_M0_BTS_LPWM_GPIO 16                  /* BTS7960 LPWM pin. */
+#define CONVEYOR_M0_BTS_REN_GPIO 6                   /* BTS7960 R_EN pin. */
+#define CONVEYOR_M0_BTS_LEN_GPIO 7                   /* BTS7960 L_EN pin. */
 
 #define CONVEYOR_JOB_TASK_STACK_SIZE 4096             /* FreeRTOS stack size for the conveyor state-machine task. */
 #define CONVEYOR_JOB_TASK_PRIORITY 5                  /* FreeRTOS priority for the conveyor state-machine task. */
