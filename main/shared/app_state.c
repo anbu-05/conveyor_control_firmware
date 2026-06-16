@@ -29,8 +29,8 @@ motor_t motors[MOTOR_COUNT] = {
         .lpwm_gpio = (gpio_num_t)CONVEYOR_M0_BTS_LPWM_GPIO,
         .ren_gpio = (gpio_num_t)CONVEYOR_M0_BTS_REN_GPIO,
         .len_gpio = (gpio_num_t)CONVEYOR_M0_BTS_LEN_GPIO,
-        .encoder_a_gpio = GPIO_NUM_15,
-        .encoder_b_gpio = GPIO_NUM_16,
+        .encoder_a_gpio = GPIO_NUM_17,
+        .encoder_b_gpio = GPIO_NUM_18,
         .rpwm_channel = LEDC_CHANNEL_0,
         .lpwm_channel = LEDC_CHANNEL_1,
         .pcnt_unit = NULL,
@@ -136,23 +136,24 @@ bool move_motor(const char *name, int direction, int pwm)
 bool start_motor(const char *name)
 {
     motor_t *motor = find_motor(name);
-    int speed = runtime_config_run_speed_counts_per_sec();
+    int pwm = runtime_config_run_pwm();
 
     if (motor == NULL) {
         return false;
     }
 
-    if (speed < 0) {
-        speed = -speed;
+    if (pwm < 0) {
+        pwm = 0;
+    }
+    if (pwm > MOTOR_PWM_MAX) {
+        pwm = MOTOR_PWM_MAX;
     }
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    if (CONVEYOR_MOTOR_FORWARD_DIRECTION == 0) {
-        motor->target_speed = -speed;
-    } else {
-        motor->target_speed = speed;
-    }
-    motor->speed_control = true;
+    motor->direction = CONVEYOR_MOTOR_FORWARD_DIRECTION;
+    motor->pwm = pwm;
+    motor->target_speed = 0;
+    motor->speed_control = false;
     xSemaphoreGive(motor_mutex);
     return true;
 }
@@ -166,8 +167,9 @@ bool stop_motor(const char *name)
     }
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    motor->pwm = 0;
     motor->target_speed = 0;
-    motor->speed_control = true;
+    motor->speed_control = false;
     xSemaphoreGive(motor_mutex);
     return true;
 }

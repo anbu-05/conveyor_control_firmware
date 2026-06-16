@@ -103,7 +103,7 @@ ERR NO_TRAY
 
 Flow:
 
-1. The motor starts immediately using runtime `run_speed_counts_per_sec`.
+1. The motor starts immediately using runtime `run_pwm`.
 2. The state machine checks `tx1` / `S1`.
 3. If `tx1` is already detecting the tray, state becomes
    `TX_WAIT_FOR_TX1_CLEAR`.
@@ -450,17 +450,15 @@ stop_all_motors()
 ```
 
 `start_motor("M0")` uses the fixed `CONVEYOR_MOTOR_FORWARD_DIRECTION` and the
-runtime `run_speed_counts_per_sec` value. The state machine only requests
-run/stop for `M0`. Normal TX/RX completion uses `stop_motor("M0")` so the
-motor PID task ramps target speed to zero. Errors and emergency stops still
-use `stop_all_motors()` for an immediate stop.
+runtime `run_pwm` value. The state machine only requests run/stop for `M0`.
+Normal TX/RX completion uses `stop_motor("M0")`, which sets PWM to zero.
+Errors and emergency stops still use `stop_all_motors()` for an immediate
+stop.
 
-The `motor_pid_task` reads encoder PCNT, calculates speed, updates the simple
-speed controller, and writes the actual BTS7960 enable plus RPWM/LPWM LEDC
-hardware. Direction `1` drives RPWM, direction `0` drives LPWM, and both
-enable pins are low when PWM is zero.
-The speed controller estimates a base PWM from the target speed, trims it with
-P/D correction, and slews the actual PWM toward that request.
+The `motor_pid_task` still reads encoder PCNT and writes the actual BTS7960
+enable plus RPWM/LPWM LEDC hardware. For normal jobs, speed control is disabled
+and the stored PWM is applied directly. Direction `1` drives RPWM, direction
+`0` drives LPWM, and both enable pins are low when PWM is zero.
 
 ## Status Output
 

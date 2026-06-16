@@ -58,10 +58,10 @@ Effect:
 Current placeholder BTS7960 pinout in `main/config/config.h`:
 
 ```text
-RPWM = GPIO 7
-LPWM = GPIO 6
-R_EN = GPIO 17
-L_EN = GPIO 18
+RPWM = GPIO 6
+LPWM = GPIO 7
+R_EN = GPIO 15
+L_EN = GPIO 16
 ```
 
 Success output:

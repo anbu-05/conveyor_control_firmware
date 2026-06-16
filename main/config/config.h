@@ -16,18 +16,18 @@
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency" /* Shared emergency-stop topic for every conveyor. */
 #define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"   /* Tray-present status topic for this conveyor. */
 
-#define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
-#define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */
+#define CONVEYOR_RUN_PWM 153                          /* Default direct-PWM job/debug speed, 60% of 255. Runtime key: run_pwm. */
+#define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default manual closed-loop speed in encoder counts/sec. */
 #define CONVEYOR_SPEED_KP_MILLI 10                    /* Default speed P gain scaled by 1000; 50 means 0.050. */
 #define CONVEYOR_SPEED_KD_MILLI 10                    /* Default speed D gain scaled by 1000 and normalized to a 20 ms PID tick. */
 #define CONVEYOR_PWM_SLEW_STEP 1                      /* Max PWM change per 20 ms motor PID tick. */
 #define CONVEYOR_SPEED_PID_PWM_MAX 128                /* Highest PWM that speed control may command. */
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* BTS7960 direction used for normal conveyor travel: 1=RPWM, 0=LPWM. */
 
-#define CONVEYOR_M0_BTS_RPWM_GPIO 7                   /* Placeholder BTS7960 RPWM pin; update for final hardware. */
-#define CONVEYOR_M0_BTS_LPWM_GPIO 6                   /* Placeholder BTS7960 LPWM pin; update for final hardware. */
-#define CONVEYOR_M0_BTS_REN_GPIO 17                   /* Placeholder BTS7960 R_EN pin; update for final hardware. */
-#define CONVEYOR_M0_BTS_LEN_GPIO 18                   /* Placeholder BTS7960 L_EN pin; update for final hardware. */
+#define CONVEYOR_M0_BTS_RPWM_GPIO 6                   /* BTS7960 RPWM pin. */
+#define CONVEYOR_M0_BTS_LPWM_GPIO 7                   /* BTS7960 LPWM pin. */
+#define CONVEYOR_M0_BTS_REN_GPIO 15                   /* BTS7960 R_EN pin. */
+#define CONVEYOR_M0_BTS_LEN_GPIO 16                   /* BTS7960 L_EN pin. */
 
 #define CONVEYOR_JOB_TASK_STACK_SIZE 4096             /* FreeRTOS stack size for the conveyor state-machine task. */
 #define CONVEYOR_JOB_TASK_PRIORITY 5                  /* FreeRTOS priority for the conveyor state-machine task. */

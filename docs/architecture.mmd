@@ -29,7 +29,7 @@ stateDiagram-v2
         direction LR
         MotorRequest: M0 target speed/PWM request
         MotorPid: motor_pid_task
-        SpeedMath: feed-forward plus P/D speed control
+        SpeedMath: direct PWM jobs plus optional P/D speed debug
     }
 
     state "Outputs" as Outputs {

@@ -11,8 +11,8 @@
 #define RUNTIME_CONFIG_NAMESPACE "conveyor_cfg" /* NVS namespace for saved runtime config values. */
 
 typedef struct {
-    int32_t run_pwm;                    /* Direct-PWM debug value. Runtime key: run_pwm. */
-    int32_t run_speed_counts_per_sec;   /* Job speed target in encoder counts/sec. */
+    int32_t run_pwm;                    /* Direct-PWM job/debug value. Runtime key: run_pwm. */
+    int32_t run_speed_counts_per_sec;   /* Manual speed target in encoder counts/sec. */
     int32_t speed_kp_milli;             /* Speed P gain scaled by 1000; 50 means 0.050. */
     int32_t speed_kd_milli;             /* Speed D gain scaled by 1000; 0 disables D control. */
     int32_t done_hold_ms;               /* DONE-state hold time before returning to IDLE. */
@@ -48,7 +48,7 @@ static bool value_is_valid(const char *name, int32_t value)
         return value >= 0 && value <= 255; /* 8-bit LEDC duty. */
     }
     if (strcmp(name, "run_speed_counts_per_sec") == 0) {
-        return value >= 0 && value <= 100000; /* Positive job speed only. */
+        return value >= 0 && value <= 100000; /* Positive manual speed only. */
     }
     if (strcmp(name, "speed_kp_milli") == 0) {
         return value >= 0 && value <= 100000; /* 0.000 to 100.000. */

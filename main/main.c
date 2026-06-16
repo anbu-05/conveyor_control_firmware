@@ -3,6 +3,8 @@
 #include "app_state.h"
 #include "config.h"
 #include "conveyor_job.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
 #include "mqtt_task.h"
 #include "runtime_config.h"
@@ -11,13 +13,25 @@ static const char *TAG = "conveyor";
 
 /*
  * Configures standard input and output for command text.
- * ESP-IDF decides whether stdin/stdout use USB Serial/JTAG or UART based on
- * sdkconfig.
+ * The USB Serial/JTAG VFS routes microrl command input and console output to
+ * the native USB port connected to the laptop.
  */
 static void configure_console(void)
 {
+    usb_serial_jtag_driver_config_t config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+
+    if (!usb_serial_jtag_is_driver_installed()) {
+        ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&config));
+    }
+
+    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
+    usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
+    usb_serial_jtag_vfs_use_driver();
+
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
+
+    ESP_LOGI(TAG, "USB Serial/JTAG console ready");
 }
 
 /*
