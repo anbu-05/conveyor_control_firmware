@@ -123,9 +123,114 @@ static bool reject_if_busy(void)
     return false;
 }
 
+static bool parse_gain_milli(const char *text, const char *config_name, int32_t *value)
+{
+    int32_t whole = 0;
+    int32_t fraction = 0;
+    int fraction_digits = 0;
+    int digit_count = 0;
+    int i = 0;
+
+    if (text == NULL || value == NULL || text[0] == '\0') {
+        return false;
+    }
+
+    while (text[i] >= '0' && text[i] <= '9') {
+        whole = whole * 10 + (text[i] - '0');
+        digit_count++;
+        i++;
+    }
+
+    if (text[i] == '.') {
+        i++;
+        while (text[i] >= '0' && text[i] <= '9' && fraction_digits < 3) {
+            fraction = fraction * 10 + (text[i] - '0');
+            fraction_digits++;
+            digit_count++;
+            i++;
+        }
+    }
+
+    if (text[i] != '\0' || digit_count == 0) {
+        return false;
+    }
+
+    while (fraction_digits < 3) {
+        fraction = fraction * 10;
+        fraction_digits++;
+    }
+
+    *value = whole * 1000 + fraction;
+    return runtime_config_value_is_valid(config_name, *value);
+}
+
+static bool parse_gain_payload(const char *message, const char *prefix, const char *config_name, int32_t *value)
+{
+    char text[16];
+    int prefix_len = strlen(prefix);
+    int value_len = 0;
+    int i = 0;
+
+    if (strncmp(message, prefix, prefix_len) != 0) {
+        return false;
+    }
+
+    while (message[prefix_len + value_len] != '\0' &&
+           strcmp(&message[prefix_len + value_len], "\"}") != 0) {
+        value_len++;
+    }
+
+    if (value_len <= 0 || value_len >= (int)sizeof(text)) {
+        return false;
+    }
+
+    if (strcmp(&message[prefix_len + value_len], "\"}") != 0) {
+        return false;
+    }
+
+    for (i = 0; i < value_len; i++) {
+        text[i] = message[prefix_len + i];
+    }
+    text[value_len] = '\0';
+
+    return parse_gain_milli(text, config_name, value);
+}
+
+static void publish_gain_config(const char *name, int32_t value)
+{
+    char message[128];
+
+    snprintf(message,
+             sizeof(message),
+             "{\"id\":\"%s\",\"config\":\"%s\",\"value\":\"%ld.%03ld\"}",
+             CONVEYOR_ID,
+             name,
+             (long)(value / 1000),
+             (long)(value % 1000));
+    publish_text(message);
+}
+
+static void publish_all_gain_config(void)
+{
+    char message[160];
+    int32_t kp_milli = runtime_config_speed_kp_milli();
+    int32_t kd_milli = runtime_config_speed_kd_milli();
+
+    snprintf(message,
+             sizeof(message),
+             "{\"id\":\"%s\",\"config\":\"speed_gains\",\"speed_kp\":\"%ld.%03ld\",\"speed_kd\":\"%ld.%03ld\"}",
+             CONVEYOR_ID,
+             (long)(kp_milli / 1000),
+             (long)(kp_milli % 1000),
+             (long)(kd_milli / 1000),
+             (long)(kd_milli % 1000));
+    publish_text(message);
+}
+
 static void handle_command_message(const char *message)
 {
     conveyor_cmd_t command;
+    int32_t gain_milli = 0;
 
     if (strcmp(message, "{\"type\":\"tx\"}") == 0) {
         if (reject_if_busy()) {
@@ -174,6 +279,46 @@ static void handle_command_message(const char *message)
         if (!conveyor_job_send_command(command)) {
             publish_bad_command("QUEUE_FULL");
         }
+        return;
+    }
+
+    if (strncmp(message, "{\"type\":\"setkp\",\"value\":\"", strlen("{\"type\":\"setkp\",\"value\":\"")) == 0) {
+        if (!parse_gain_payload(message, "{\"type\":\"setkp\",\"value\":\"", "speed_kp_milli", &gain_milli)) {
+            publish_bad_command("BAD_VALUE");
+            return;
+        }
+
+        if (!runtime_config_set_speed_kp_milli(gain_milli)) {
+            publish_bad_command("CONFIG_SAVE");
+            return;
+        }
+
+        publish_gain_config("speed_kp", gain_milli);
+        return;
+    }
+
+    if (strncmp(message, "{\"type\":\"setkd\",\"value\":\"", strlen("{\"type\":\"setkd\",\"value\":\"")) == 0) {
+        if (!parse_gain_payload(message, "{\"type\":\"setkd\",\"value\":\"", "speed_kd_milli", &gain_milli)) {
+            publish_bad_command("BAD_VALUE");
+            return;
+        }
+
+        if (!runtime_config_set_speed_kd_milli(gain_milli)) {
+            publish_bad_command("CONFIG_SAVE");
+            return;
+        }
+
+        publish_gain_config("speed_kd", gain_milli);
+        return;
+    }
+
+    if (strcmp(message, "{\"type\":\"resetk\"}") == 0) {
+        if (!runtime_config_reset_speed_gains()) {
+            publish_bad_command("CONFIG_SAVE");
+            return;
+        }
+
+        publish_all_gain_config();
         return;
     }
 

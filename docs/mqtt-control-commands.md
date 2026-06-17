@@ -113,6 +113,69 @@ Effect:
 - Clears `ERROR` or `ESTOP`.
 - Returns the state machine to `IDLE`.
 
+### Set Speed P Gain
+
+Payload:
+
+```json
+{"type":"setkp","value":"0.010"}
+```
+
+Effect:
+
+- Saves `speed_kp` to NVS.
+- Takes effect immediately because the motor PID task reads runtime config.
+- Accepts decimal values from `0.000` to `100.000`.
+- The value must be a quoted decimal with no more than 3 digits after the dot.
+
+Success feedback:
+
+```json
+{"id":"C0","config":"speed_kp","value":"0.010"}
+```
+
+### Set Speed D Gain
+
+Payload:
+
+```json
+{"type":"setkd","value":"0.010"}
+```
+
+Effect:
+
+- Saves `speed_kd` to NVS.
+- Takes effect immediately because the motor PID task reads runtime config.
+- Accepts decimal values from `0.000` to `100.000`.
+- The value must be a quoted decimal with no more than 3 digits after the dot.
+
+Success feedback:
+
+```json
+{"id":"C0","config":"speed_kd","value":"0.010"}
+```
+
+### Reset Speed Gains
+
+Payload:
+
+```json
+{"type":"resetk"}
+```
+
+Effect:
+
+- Restores only `speed_kp` and `speed_kd` to the defaults in
+  `main/config/config.h`.
+- Saves both defaults to NVS.
+- Leaves other runtime config values unchanged.
+
+Success feedback:
+
+```json
+{"id":"C0","config":"speed_gains","speed_kp":"0.010","speed_kd":"0.010"}
+```
+
 ## Emergency Topics
 
 This conveyor listens to its own emergency topic:
@@ -180,6 +243,8 @@ QUEUE_FULL
 NO_TRAY
 TRAY_PRESENT
 BAD_EMERGENCY
+BAD_VALUE
+CONFIG_SAVE
 ```
 
 ## Tray Topic
@@ -216,6 +281,9 @@ exact compact payloads like:
 {"type":"rx"}
 {"type":"emergency_stop"}
 {"type":"clear_error"}
+{"type":"setkp","value":"0.010"}
+{"type":"setkd","value":"0.010"}
+{"type":"resetk"}
 ```
 
 Whitespace inside JSON fields is not currently handled by a real JSON parser.

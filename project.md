@@ -42,6 +42,8 @@ Added runtime-editable config values backed by NVS. Serial debug commands can re
 
 Added `resetk` as a narrow gain reset command. It restores only `speed_kp` and `speed_kd` to the defaults from `main/config/config.h`, saves them to NVS, and leaves every other runtime config value unchanged.
 
+Added MQTT PID gain tuning on the existing command topic. Compact payloads `{"type":"setkp","value":"0.010"}`, `{"type":"setkd","value":"0.010"}`, and `{"type":"resetk"}` save through the same NVS-backed runtime config used by serial `setkp`, `setkd`, and `resetk`. MQTT still does not expose raw motor commands or general runtime config.
+
 Config files now include inline comments for each compile-time parameter and runtime config getter/key meaning, so tuning values can be understood without chasing their use sites.
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
@@ -311,6 +313,9 @@ MQTT commands are high-level JSON only:
 {"type":"rx"}
 {"type":"emergency_stop"}
 {"type":"clear_error"}
+{"type":"setkp","value":"0.010"}
+{"type":"setkd","value":"0.010"}
+{"type":"resetk"}
 ```
 
 MQTT defaults:

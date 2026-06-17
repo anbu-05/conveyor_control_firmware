@@ -103,7 +103,13 @@ MQTT accepts high-level compact payloads only:
 {"type":"rx"}
 {"type":"emergency_stop"}
 {"type":"clear_error"}
+{"type":"setkp","value":"0.010"}
+{"type":"setkd","value":"0.010"}
+{"type":"resetk"}
 ```
+
+The PID gain payloads save `speed_kp` and `speed_kd` to NVS and publish an
+acknowledgement on the feedback topic.
 
 Tray status publishes once on MQTT connect, then only when `has_tray` changes.
 
@@ -129,7 +135,8 @@ mqtt_status_period_ms
 
 Use the serial debug commands `getconfig`, `setconfig`, and `resetconfig`.
 Use `setkp` and `setkd` for decimal speed gain tuning. Use `resetk` to restore
-only the P/D speed gains to their defaults.
+only the P/D speed gains to their defaults. MQTT can also tune only these P/D
+gains with compact `setkp`, `setkd`, and `resetk` payloads.
 
 ## Detailed Docs
 

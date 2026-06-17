@@ -156,6 +156,9 @@ Normal command topic accepts:
 {"type":"rx"}
 {"type":"emergency_stop"}
 {"type":"clear_error"}
+{"type":"setkp","value":"0.010"}
+{"type":"setkd","value":"0.010"}
+{"type":"resetk"}
 ```
 
 Emergency topics accept:
@@ -166,6 +169,9 @@ STOP
 ```
 
 Whitespace, extra fields, aliases, and old direction payloads are rejected.
+For `setkp` and `setkd`, only the shown field order is accepted. The decimal
+value may change, but it must be quoted and must have no more than 3 digits
+after the dot.
 
 Rejected example:
 
@@ -206,6 +212,10 @@ NO_TRAY
 TRAY_PRESENT
 ```
 
+PID gain messages do not go through the conveyor job queue. They call the same
+runtime config setters used by serial `setkp`, `setkd`, and `resetk`, so valid
+values are saved to NVS and become active immediately.
+
 ## Feedback Publishing
 
 MQTT feedback is published to:
@@ -241,6 +251,20 @@ Command parsing errors are also published to the feedback topic:
 
 ```json
 {"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0}
+```
+
+PID config acknowledgements are published to the same feedback topic:
+
+```json
+{"id":"C0","config":"speed_kp","value":"0.010"}
+```
+
+```json
+{"id":"C0","config":"speed_kd","value":"0.010"}
+```
+
+```json
+{"id":"C0","config":"speed_gains","speed_kp":"0.010","speed_kd":"0.010"}
 ```
 
 `state_elapsed_ms` is computed by the conveyor job state machine. It is the
@@ -291,6 +315,8 @@ JOB_BUSY
 QUEUE_FULL
 NO_TRAY
 TRAY_PRESENT
+BAD_VALUE
+CONFIG_SAVE
 ```
 
 These are MQTT command handling errors. They are not the same as conveyor
@@ -303,6 +329,7 @@ state-machine errors like `TX_DETECT_TIMEOUT` or `RX_DONE_TIMEOUT`.
 - Broker URI is a compile-time constant.
 - Payload parsing is exact string matching.
 - MQTT does not expose raw `setmotor`, `stopmotor`, or runtime config commands.
-- MQTT does not change `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, `speed_kd`, or timeout settings.
+- MQTT can change only `speed_kp` and `speed_kd` with the narrow PID gain payloads.
+- MQTT does not change `run_pwm`, `run_speed_counts_per_sec`, timeout settings, or MQTT status period.
 - MQTT status publish period is runtime-configurable through serial only.
 - MQTT tray presence is change-driven and does not publish continuously.
