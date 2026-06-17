@@ -311,7 +311,7 @@ watchencoder M0 on
 Effect:
 
 - Prints `EVENT ENCODER M0 <count> <speed>` lines about every 100 ms.
-- The count comes from PCNT using GPIO15 as channel A and GPIO16 as channel B.
+- The count comes from PCNT using GPIO17 as channel A and GPIO18 as channel B.
 - The speed is calculated by the motor PID task in encoder counts per second.
 - The same raw count is stored in `M0.position`.
 
@@ -376,7 +376,7 @@ ENCODER M0 120 1 0
 Field order:
 
 ```text
-ENCODER <motor> <count> <gpio15_a> <gpio16_b>
+ENCODER <motor> <count> <gpio17_a> <gpio18_b>
 ```
 
 Error outputs:

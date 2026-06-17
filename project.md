@@ -2,7 +2,11 @@
 
 ## Current Status
 
-ESP-IDF starter project for controlling one motor through a Cytron MD30C.
+ESP-IDF starter project for controlling one motor through a BTS7960.
+
+Changed the motor driver output from MD30C-style one PWM plus one direction GPIO to BTS7960-style two PWM outputs plus two enable pins. The configured BTS7960 pins are `RPWM=GPIO15`, `LPWM=GPIO16`, `REN=GPIO6`, and `LEN=GPIO7`. `direction=1` drives `RPWM` with PWM and keeps `LPWM` at zero; `direction=0` drives `LPWM` with PWM and keeps `RPWM` at zero. `REN` and `LEN` are set high during PWM setup.
+
+Updated the encoder wiring to avoid the BTS7960 PWM pins. Encoder channel A is now GPIO17 and encoder channel B is now GPIO18.
 
 Implemented a strict serial command layer using a vendored local `microrl` component. The app has one motor, `M0`, controlled by one combined FreeRTOS motor PID task.
 
@@ -14,9 +18,9 @@ Troubleshooting update: command input now uses `stdin` instead of directly readi
 
 Added two binary sensors, `S0` on GPIO4 and `S1` on GPIO5. A sensor reader task polls them every 20 ms and prints machine-readable event lines when `watchsensors on` is enabled.
 
-Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO15 is encoder channel A and GPIO16 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO15/GPIO16 levels.
+Added a basic quadrature encoder setup for `M0` using ESP-IDF PCNT. GPIO17 is encoder channel A and GPIO18 is encoder channel B. The encoder setup configures both encoder pins as inputs with internal pullups, uses full x4 counting, and applies a 1000 ns PCNT glitch filter. `getencoder M0` prints a one-shot diagnostic line with count plus raw GPIO17/GPIO18 levels.
 
-Added a combined motor PID task. `motor_pid_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, updates the speed controller when enabled, and writes direction GPIO plus LEDC PWM hardware directly. Startup speed averaging divides by the number of real samples collected so the first few samples are not biased low.
+Added a combined motor PID task. `motor_pid_task` reads PCNT at a fixed 20 ms tick, calculates current speed in counts/sec from encoder count deltas, smooths it with a 5-sample moving average, stores `M0.position` and `M0.current_speed`, updates the speed controller when enabled, and writes BTS7960 RPWM/LPWM LEDC hardware directly. Startup speed averaging divides by the number of real samples collected so the first few samples are not biased low.
 
 Renamed the motor PID source file to `main/tasks/motor_pid_task.c`. Inside it, `update_motor_speed_control()` owns the speed-control math and shared motor PWM/direction request updates, while `apply_motor_output()` owns the final GPIO/LEDC hardware writes.
 
@@ -89,6 +93,32 @@ Render-check Mermaid changes with `mmdc`, usually through:
 
 ```text
 npx -p @mermaid-js/mermaid-cli mmdc -i docs/<file>.mmd -o /tmp/<file>.png
+```
+
+## Laptop MQTT Quickstart
+
+The conveyor firmware is an MQTT client. It does not host the broker. A laptop
+should connect to the same broker configured in `main/config/config.h`.
+
+Current broker and topics:
+
+```text
+Broker: 192.168.1.126
+Command topic: conveyor/C0/cmd
+Feedback topic: conveyor/C0/feedback
+Tray topic: conveyor/C0/tray
+Emergency topic: conveyor/C0/emergency
+All-conveyors emergency topic: conveyor/all/emergency
+```
+
+Useful laptop commands with Mosquitto clients:
+
+```text
+mosquitto_sub -h 192.168.1.126 -t 'conveyor/C0/#' -v
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"tx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"rx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/emergency -m '{"type":"emergency_stop"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"clear_error"}'
 ```
 
 Serial output is now token-based for a Python wrapper:
@@ -180,11 +210,14 @@ CONFIG speed_kd 0.000
 - `current_speed`
 - `pos_control`
 - `speed_control`
-- `pwm_gpio`
-- `dir_gpio`
+- `rpwm_gpio`
+- `lpwm_gpio`
+- `ren_gpio`
+- `len_gpio`
 - `encoder_a_gpio`
 - `encoder_b_gpio`
-- `ledc_channel`
+- `rpwm_ledc_channel`
+- `lpwm_ledc_channel`
 - `pcnt_unit`
 
 `sensor_t` currently stores:
@@ -197,11 +230,14 @@ CONFIG speed_kd 0.000
 Current motor:
 
 - `M0`
-- PWM GPIO: `GPIO_NUM_7`
-- Direction GPIO: `GPIO_NUM_6`
-- Encoder A GPIO: `GPIO_NUM_15`
-- Encoder B GPIO: `GPIO_NUM_16`
-- LEDC channel: `LEDC_CHANNEL_0`
+- RPWM GPIO: `GPIO_NUM_15`
+- LPWM GPIO: `GPIO_NUM_16`
+- REN GPIO: `GPIO_NUM_6`
+- LEN GPIO: `GPIO_NUM_7`
+- Encoder A GPIO: `GPIO_NUM_17`
+- Encoder B GPIO: `GPIO_NUM_18`
+- RPWM LEDC channel: `LEDC_CHANNEL_0`
+- LPWM LEDC channel: `LEDC_CHANNEL_1`
 
 Current sensors:
 
@@ -250,7 +286,7 @@ clearerror
 - `watchsensors off`: disables sensor event printing.
 - `watchencoder M0 on`: enables encoder count and speed event printing.
 - `watchencoder M0 off`: disables raw encoder count event printing.
-- `getencoder M0`: prints `ENCODER M0 <count> <gpio15_a> <gpio16_b>`.
+- `getencoder M0`: prints `ENCODER M0 <count> <gpio17_a> <gpio18_b>`.
 - `getmotor M0`: prints `MOTOR M0 <pwm> <direction> <position> <target_speed> <current_speed> <speed_control>`.
 - `gettray`: prints derived tray presence and raw `S0/S1` values.
 - `getconfig`: prints all editable runtime config values.
@@ -316,9 +352,11 @@ Current high-level job states:
 
 - Project name is `conveyor`.
 - Target is ESP32-S3 based on current `sdkconfig`.
-- GPIO7 and GPIO6 are valid on the actual board.
-- The MD30C `P` pin is connected to GPIO7.
-- The MD30C `D` pin is connected to GPIO6.
+- GPIO15, GPIO16, GPIO6, GPIO7, GPIO17, and GPIO18 are valid on the actual board.
+- The BTS7960 `RPWM` pin is connected to GPIO15.
+- The BTS7960 `LPWM` pin is connected to GPIO16.
+- The BTS7960 `REN` pin is connected to GPIO6.
+- The BTS7960 `LEN` pin is connected to GPIO7.
 - Sensor `S0` is connected to GPIO4 with an external pullup.
 - Sensor `S1` is connected to GPIO5 with an external pullup.
 - `S0` is the entry sensor.
@@ -330,9 +368,9 @@ Current high-level job states:
 - MQTT feedback includes `state_elapsed_ms`, measured from the current state's entry time.
 - Commands are strict and literal.
 - Sensor output is binary. Both 1 to 0 and 0 to 1 transitions are printed when watching is enabled.
-- Encoder `M0` channel A is GPIO15.
-- Encoder `M0` channel B is GPIO16.
-- Encoder GPIO15/GPIO16 are configured as inputs with internal pullups before PCNT setup.
+- Encoder `M0` channel A is GPIO17.
+- Encoder `M0` channel B is GPIO18.
+- Encoder GPIO17/GPIO18 are configured as inputs with internal pullups before PCNT setup.
 - Encoder PCNT uses full x4 quadrature counting.
 - Encoder PCNT uses a 1000 ns hardware glitch filter to reject very short noise pulses.
 - PID speed control currently has P and optional D terms. Integral control is not implemented yet.

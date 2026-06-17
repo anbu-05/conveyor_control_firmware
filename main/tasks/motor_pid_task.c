@@ -168,9 +168,19 @@ static void update_motor_speed_control(motor_t *motor, int speed, int *last_erro
 
 static void apply_motor_output(motor_t *motor, int direction, int pwm)
 {
-    ESP_ERROR_CHECK(gpio_set_level(motor->dir_gpio, direction));
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel, pwm));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->ledc_channel));
+    int rpwm = 0;
+    int lpwm = 0;
+
+    if (direction == 1) {
+        rpwm = pwm;
+    } else {
+        lpwm = pwm;
+    }
+
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, rpwm));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel, lpwm));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel));
 }
 
 void motor_pid_task(void *arg)

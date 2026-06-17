@@ -32,7 +32,7 @@ stateDiagram-v2
     }
 
     state "Outputs\nWhat the firmware drives or reports" as Outputs {
-        MotorHw: MD30C and motor\nPWM plus direction GPIO
+        MotorHw: BTS7960 and motor\nRPWM/LPWM plus enable GPIOs
         SerialOut: serial output\nREADY, OK, ERR, EVENT, CONFIG lines
         MqttOut: MQTT output\nFeedback and tray status topics
     }

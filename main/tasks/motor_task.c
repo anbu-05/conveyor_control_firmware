@@ -4,10 +4,7 @@
 #include "driver/ledc.h"
 #include "esp_err.h"
 
-/*
- * Configures the shared LEDC timer and then attaches every motor's PWM pin to
- * its channel.
- */
+/* Configures the shared LEDC timer and attaches each BTS7960 PWM pin. */
 void configure_pwm(void)
 {
     ledc_timer_config_t ledc_timer = {
@@ -21,17 +18,28 @@ void configure_pwm(void)
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
     for (int i = 0; i < MOTOR_COUNT; i++) {
-        ledc_channel_config_t ledc_channel = {
-            .gpio_num = motors[i].pwm_gpio,
+        ledc_channel_config_t rpwm_channel = {
+            .gpio_num = motors[i].rpwm_gpio,
             .speed_mode = LEDC_LOW_SPEED_MODE,
-            .channel = motors[i].ledc_channel,
+            .channel = motors[i].rpwm_ledc_channel,
+            .timer_sel = LEDC_TIMER_0,
+            .duty = 0,
+            .hpoint = 0,
+        };
+        ledc_channel_config_t lpwm_channel = {
+            .gpio_num = motors[i].lpwm_gpio,
+            .speed_mode = LEDC_LOW_SPEED_MODE,
+            .channel = motors[i].lpwm_ledc_channel,
             .timer_sel = LEDC_TIMER_0,
             .duty = 0,
             .hpoint = 0,
         };
 
-        ESP_ERROR_CHECK(gpio_set_direction(motors[i].dir_gpio, GPIO_MODE_OUTPUT));
-        ESP_ERROR_CHECK(gpio_set_level(motors[i].dir_gpio, 0));
-        ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+        ESP_ERROR_CHECK(gpio_set_direction(motors[i].ren_gpio, GPIO_MODE_OUTPUT));
+        ESP_ERROR_CHECK(gpio_set_direction(motors[i].len_gpio, GPIO_MODE_OUTPUT));
+        ESP_ERROR_CHECK(gpio_set_level(motors[i].ren_gpio, 1));
+        ESP_ERROR_CHECK(gpio_set_level(motors[i].len_gpio, 1));
+        ESP_ERROR_CHECK(ledc_channel_config(&rpwm_channel));
+        ESP_ERROR_CHECK(ledc_channel_config(&lpwm_channel));
     }
 }

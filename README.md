@@ -1,24 +1,27 @@
 # conveyor
 
-ESP-IDF project for one conveyor controller using an ESP32-S3, a Cytron
-MD30C motor driver, two tray sensors, serial debug commands, and MQTT
-high-level control.
+ESP-IDF project for one conveyor controller using an ESP32-S3, a BTS7960
+motor driver, two tray sensors, serial debug commands, and MQTT high-level
+control.
 
 ## Hardware
 
 - Target: ESP32-S3
-- Cytron MD30C `P` pin: GPIO7
-- Cytron MD30C `D` pin: GPIO6
-- Encoder `M0` channel A: GPIO15
-- Encoder `M0` channel B: GPIO16
+- BTS7960 `RPWM` pin: GPIO15
+- BTS7960 `LPWM` pin: GPIO16
+- BTS7960 `REN` pin: GPIO6
+- BTS7960 `LEN` pin: GPIO7
+- Encoder `M0` channel A: GPIO17
+- Encoder `M0` channel B: GPIO18
 - Sensor `S0`: GPIO4
 - Sensor `S1`: GPIO5
-- ESP32 ground and MD30C ground must be connected together.
+- ESP32 ground and BTS7960 ground must be connected together.
 - Motor power should come from the motor power supply, not from the ESP32.
 - The sensor inputs are active-low in the current firmware.
 - The sensor inputs use external pullups. Internal pullups and pulldowns are disabled.
 
-Check your exact ESP32-S3 board pinout before wiring. GPIO7 and GPIO6 must be available on your board.
+Check your exact ESP32-S3 board pinout before wiring. GPIO15, GPIO16, GPIO6,
+GPIO7, GPIO17, and GPIO18 must be available on your board.
 
 ## Conveyor Sensor Reference
 
@@ -227,7 +230,7 @@ idf.py flash monitor
 
 - Only one motor, `M0`, is configured.
 - Two binary sensors, `S0` and `S1`, are configured.
-- Basic raw encoder PCNT reading is implemented for `M0` on GPIO15/GPIO16.
+- Basic raw encoder PCNT reading is implemented for `M0` on GPIO17/GPIO18.
 - P/D speed control is implemented in `motor_pid_task`.
 - Speed control direction follows the target speed sign.
 - A measured speed/PWM table estimates the base PWM, then P/D trims around that base request.
@@ -235,6 +238,6 @@ idf.py flash monitor
 - `motor.pwm` slews toward the requested PWM by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
 - Direction reversals ramp PWM down to zero before changing the direction GPIO.
 - Speed measurement uses a 5-sample moving average without low startup bias.
-- Encoder GPIO15/GPIO16 are configured as inputs with internal pullups.
+- Encoder GPIO17/GPIO18 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
 - Encoder filtering, zeroing, MQTT publishing, I control, and position control are not implemented yet.
