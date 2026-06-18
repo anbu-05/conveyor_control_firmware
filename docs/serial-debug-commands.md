@@ -8,6 +8,11 @@ this usually appears as `/dev/ttyACM0`.
 Commands are strict and literal. Case changes, aliases, missing arguments, or
 extra arguments are rejected.
 
+The browser webapp in `tools/conveyor_web` also has a `Serial Debug` tab. The
+tab connects through the Python backend with `pyserial`, streams machine-readable
+output over WebSocket, parses common status lines into cards, and keeps powerful
+direct motor/raw commands separated behind warnings and confirmation prompts.
+
 ## Sensor Reference
 
 The firmware treats the physical sensors like this:

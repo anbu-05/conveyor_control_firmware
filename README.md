@@ -133,9 +133,16 @@ Tray status publishes once on MQTT connect, then only when `has_tray` changes.
 ## Python Web GUI
 
 A browser-based Python webapp is available in `tools/conveyor_web`. It serves a
-local control panel and bridges the browser to the plain MQTT broker. It uses the
-same compact MQTT payloads listed above and does not expose raw motor PWM
-commands.
+local control panel with separate `MQTT Control` and `Serial Debug` tabs.
+
+The MQTT tab bridges the browser to the plain MQTT broker. It uses the same
+compact MQTT payloads listed above and does not expose raw motor PWM commands.
+
+The Serial Debug tab connects through the Python backend to the ESP32-S3 USB
+Serial/JTAG console, usually `/dev/ttyACM0` at `115200`. It exposes the stricter
+and more powerful serial debug commands, including diagnostics, watchers,
+runtime config editing, direct motor debug, and a guarded raw single-line
+console.
 
 Install and run from this folder:
 
@@ -155,6 +162,11 @@ Open `http://127.0.0.1:8080` after the server starts. The webapp subscribes to
 raw `S0`/`S1`, direction, RSSI, errors, PID gain acknowledgements, and a bounded
 MQTT log. Controls include `TX`, `RX`, emergency stop, all stop, clear error,
 direction, RSSI query, and speed P/D gain tuning.
+
+For serial control, open the `Serial Debug` tab, connect to `/dev/ttyACM0`, and
+use the diagnostics/job/config sections. High-risk serial actions such as direct
+motor commands, immediate stop, reset config, and raw command send are visually
+separated and confirmation-gated in the browser.
 
 ## Runtime Config
 

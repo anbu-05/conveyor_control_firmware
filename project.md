@@ -46,7 +46,7 @@ Added MQTT PID gain tuning on the existing command topic. Compact payloads `{"ty
 
 Config files now include inline comments for each compile-time parameter and runtime config getter/key meaning, so tuning values can be understood without chasing their use sites.
 
-Added a browser-based Python MQTT web GUI under `tools/conveyor_web`. It uses a FastAPI backend plus `paho-mqtt` to bridge the browser to the plain MQTT broker, subscribes to feedback/tray topics, shows live state/sensors/direction/RSSI/errors, and publishes only the current compact high-level MQTT payloads.
+Added a browser-based Python web GUI under `tools/conveyor_web`. It uses a FastAPI backend plus `paho-mqtt` to bridge the browser to the plain MQTT broker, subscribes to feedback/tray topics, shows live state/sensors/direction/RSSI/errors, and publishes only the current compact high-level MQTT payloads. It also has a separate Serial Debug tab backed by `pyserial` for `/dev/ttyACM0` console control, parsed diagnostics, watcher output, runtime config editing, guarded direct motor commands, and a guarded raw single-line console.
 
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
