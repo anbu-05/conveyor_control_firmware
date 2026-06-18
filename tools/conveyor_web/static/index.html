@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conveyor Web Controller</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">MQTT Conveyor Control</p>
+          <h1>Conveyor C0 Web Panel</h1>
+          <p class="subtle">Browser control surface for the ESP32 conveyor MQTT backend.</p>
+        </div>
+        <div class="status-stack">
+          <span id="wsStatus" class="pill muted">WebSocket disconnected</span>
+          <span id="mqttStatus" class="pill muted">MQTT disconnected</span>
+        </div>
+      </header>
+
+      <section class="grid two">
+        <form id="connectForm" class="card connection-card">
+          <h2>Connection</h2>
+          <div class="form-grid">
+            <label>
+              MQTT Host
+              <input id="mqttHost" name="mqttHost" autocomplete="off" />
+            </label>
+            <label>
+              MQTT Port
+              <input id="mqttPort" name="mqttPort" type="number" min="1" max="65535" />
+            </label>
+            <label>
+              Conveyor ID
+              <input id="conveyorId" name="conveyorId" autocomplete="off" />
+            </label>
+          </div>
+          <div class="button-row">
+            <button type="submit">Connect MQTT</button>
+            <button id="disconnectButton" type="button" class="secondary">Disconnect</button>
+          </div>
+        </form>
+
+        <section class="card state-card" id="stateCard">
+          <h2>Live State</h2>
+          <div class="state-readout">
+            <span id="stateValue">UNKNOWN</span>
+            <small id="elapsedValue">- ms</small>
+          </div>
+          <div id="errorValue" class="error-line">No active error</div>
+        </section>
+      </section>
+
+      <section class="metrics">
+        <article class="metric-card">
+          <span>Tray</span>
+          <strong id="trayValue">Unknown</strong>
+        </article>
+        <article class="metric-card">
+          <span>S0 Raw</span>
+          <strong id="s0Value">-</strong>
+          <small>0 = detected</small>
+        </article>
+        <article class="metric-card">
+          <span>S1 Raw</span>
+          <strong id="s1Value">-</strong>
+          <small>1 = clear</small>
+        </article>
+        <article class="metric-card">
+          <span>Direction</span>
+          <strong id="directionValue">UNKNOWN</strong>
+        </article>
+        <article class="metric-card">
+          <span>RSSI</span>
+          <strong id="rssiValue">-</strong>
+        </article>
+        <article class="metric-card">
+          <span>Gains</span>
+          <strong><span id="kpValue">-</span> / <span id="kdValue">-</span></strong>
+          <small>KP / KD</small>
+        </article>
+      </section>
+
+      <section class="grid two controls-grid">
+        <section class="card command-card">
+          <h2>Commands</h2>
+          <div class="command-grid">
+            <button class="command" data-command="tx">TX</button>
+            <button class="command" data-command="rx">RX</button>
+            <button class="command" data-command="clear_error">Clear Error</button>
+            <button class="command" data-command="get_direction">Get Direction</button>
+            <button class="command" data-command="get_rssi">Get RSSI</button>
+            <button class="command danger" data-command="emergency_stop">Emergency Stop</button>
+            <button class="command danger wide" data-command="all_stop">All Stop</button>
+          </div>
+        </section>
+
+        <section class="card tuning-card">
+          <h2>Direction And PID</h2>
+          <div class="inline-control">
+            <label for="directionSelect">Direction</label>
+            <select id="directionSelect">
+              <option value="s0tos1">S0 to S1</option>
+              <option value="s1tos0">S1 to S0</option>
+            </select>
+            <button id="setDirectionButton" class="command" type="button">Set Direction</button>
+          </div>
+          <div class="inline-control">
+            <label for="kpInput">KP</label>
+            <input id="kpInput" inputmode="decimal" value="0.010" />
+            <button id="setKpButton" class="command" type="button">Set KP</button>
+          </div>
+          <div class="inline-control">
+            <label for="kdInput">KD</label>
+            <input id="kdInput" inputmode="decimal" value="0.010" />
+            <button id="setKdButton" class="command" type="button">Set KD</button>
+          </div>
+          <button class="command secondary" data-command="reset_gains" type="button">Reset Gains</button>
+        </section>
+      </section>
+
+      <section class="card log-card">
+        <div class="log-header">
+          <h2>MQTT Log</h2>
+          <button id="clearLogButton" type="button" class="secondary small">Clear Log</button>
+        </div>
+        <pre id="logOutput" aria-live="polite"></pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

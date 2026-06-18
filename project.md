@@ -46,6 +46,8 @@ Added MQTT PID gain tuning on the existing command topic. Compact payloads `{"ty
 
 Config files now include inline comments for each compile-time parameter and runtime config getter/key meaning, so tuning values can be understood without chasing their use sites.
 
+Added a browser-based Python MQTT web GUI under `tools/conveyor_web`. It uses a FastAPI backend plus `paho-mqtt` to bridge the browser to the plain MQTT broker, subscribes to feedback/tray topics, shows live state/sensors/direction/RSSI/errors, and publishes only the current compact high-level MQTT payloads.
+
 Expanded the conveyor state-machine documentation with detailed TX/RX timeout meanings, timer start points, physical sensor mapping, failure causes, and tuning notes.
 
 Removed the old conveyor `left`/`right` job convention. The conveyor now always moves trays from `S0` to `S1`. Logical job sensors are zero-based: `tx0 = S0`, `tx1 = S1`, `rx0 = S0`, and `rx1 = S1`.
@@ -131,6 +133,15 @@ mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setkd","value":"0
 mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"resetk"}'
 ```
 
+Or run the Python web GUI:
+
+```bash
+python3 -m pip install -r tools/conveyor_web/requirements.txt
+python3 -m tools.conveyor_web --host 127.0.0.1 --port 8080 --mqtt-host 192.168.1.126 --mqtt-port 1883 --id C0
+```
+
+Then open `http://127.0.0.1:8080`.
+
 Serial output is now token-based for a Python wrapper:
 
 ```text
@@ -207,6 +218,7 @@ CONFIG speed_kd 0.000
 - `docs/mqtt-control-commands.md`: Detailed MQTT topic, payload, and feedback reference.
 - `docs/mqtt-implementation.md`: Detailed MQTT implementation and task-flow reference.
 - `docs/conveyor-state-machine.md`: Detailed TX/RX state machine reference.
+- `tools/conveyor_web/`: Browser-based Python MQTT driver, web server, and static control panel.
 - `README.md`: Human-facing usage, wiring, commands, and build notes.
 - `sdkconfig.defaults`: Default log level config.
 - `project.md`: Project status notes for future chats.

@@ -130,6 +130,32 @@ mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"clear_error"}'
 
 Tray status publishes once on MQTT connect, then only when `has_tray` changes.
 
+## Python Web GUI
+
+A browser-based Python webapp is available in `tools/conveyor_web`. It serves a
+local control panel and bridges the browser to the plain MQTT broker. It uses the
+same compact MQTT payloads listed above and does not expose raw motor PWM
+commands.
+
+Install and run from this folder:
+
+```bash
+python3 -m pip install -r tools/conveyor_web/requirements.txt
+python3 -m tools.conveyor_web
+```
+
+Useful options:
+
+```bash
+python3 -m tools.conveyor_web --host 127.0.0.1 --port 8080 --mqtt-host 192.168.1.126 --mqtt-port 1883 --id C0
+```
+
+Open `http://127.0.0.1:8080` after the server starts. The webapp subscribes to
+`conveyor/C0/feedback` and `conveyor/C0/tray`, then shows state, tray presence,
+raw `S0`/`S1`, direction, RSSI, errors, PID gain acknowledgements, and a bounded
+MQTT log. Controls include `TX`, `RX`, emergency stop, all stop, clear error,
+direction, RSSI query, and speed P/D gain tuning.
+
 ## Runtime Config
 
 Runtime-editable values are loaded from NVS. Defaults are still defined in

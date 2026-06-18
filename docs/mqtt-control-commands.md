@@ -61,6 +61,27 @@ mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"resetk"}'
 Use `tx` only when a tray is already detected on this conveyor. Use `rx` only
 when this conveyor is empty.
 
+## Laptop Python Web GUI
+
+The repo also includes a small browser-based GUI that uses this same MQTT
+protocol through a local Python backend. Install its dependencies and run it from
+the repo root:
+
+```bash
+python3 -m pip install -r tools/conveyor_web/requirements.txt
+python3 -m tools.conveyor_web
+```
+
+Optional broker and conveyor ID overrides:
+
+```bash
+python3 -m tools.conveyor_web --host 127.0.0.1 --port 8080 --mqtt-host 192.168.1.126 --mqtt-port 1883 --id C0
+```
+
+Open `http://127.0.0.1:8080` after the server starts. The webapp subscribes to
+feedback and tray topics, displays the latest conveyor state, and publishes only
+the compact command payloads documented below.
+
 ## Sensor Reference
 
 ```text
