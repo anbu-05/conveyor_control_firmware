@@ -16,7 +16,7 @@ Implementation details are documented in
 
 ```text
 WiFi SSID: thrd_warehouse
-Broker: mqtt://192.168.1.220
+Broker: mqtt://192.168.1.126
 Conveyor ID: C0
 Command topic: conveyor/C0/cmd
 Emergency topic: conveyor/C0/emergency
@@ -31,6 +31,35 @@ It can be changed at runtime with serial debug:
 ```text
 setconfig mqtt_status_period_ms 500
 ```
+
+## Laptop Mosquitto Commands
+
+Install Mosquitto clients on the laptop, connect the laptop to the same network
+as the ESP32 and broker, then subscribe to all conveyor messages in one terminal:
+
+```bash
+mosquitto_sub -h 192.168.1.126 -t 'conveyor/C0/#' -v
+```
+
+Use another terminal to publish commands:
+
+```bash
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getdirection"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setdirection","value":"s0tos1"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setdirection","value":"s1tos0"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getrssi"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"tx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"rx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/emergency -m '{"type":"emergency_stop"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/all/emergency -m 'STOP'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"clear_error"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setkp","value":"0.010"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setkd","value":"0.010"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"resetk"}'
+```
+
+Use `tx` only when a tray is already detected on this conveyor. Use `rx` only
+when this conveyor is empty.
 
 ## Sensor Reference
 
@@ -176,6 +205,64 @@ Success feedback:
 {"id":"C0","config":"speed_gains","speed_kp":"0.010","speed_kd":"0.010"}
 ```
 
+### Set Travel Direction
+
+Payloads:
+
+```json
+{"type":"setdirection","value":"s0tos1"}
+```
+
+```json
+{"type":"setdirection","value":"s1tos0"}
+```
+
+Effect:
+
+- Changes the logical travel direction when the conveyor is `IDLE`.
+- Rejected with `JOB_BUSY` if not idle.
+- Rejected with `BAD_VALUE` for unknown direction strings.
+
+Success feedback:
+
+```json
+{"id":"C0","direction":"S0_TO_S1"}
+```
+
+```json
+{"id":"C0","direction":"S1_TO_S0"}
+```
+
+### Get Travel Direction
+
+Payload:
+
+```json
+{"type":"getdirection"}
+```
+
+Success feedback returns the current direction exactly as the set-direction success payloads.
+
+### Get RSSI
+
+Payload:
+
+```json
+{"type":"getrssi"}
+```
+
+Success feedback:
+
+```json
+{"id":"C0","rssi":-55}
+```
+
+Failure (Wi-Fi not connected or read error) returns:
+
+```json
+{"id":"C0","state":"IDLE","state_elapsed_ms":...,"error":"RSSI_UNAVAILABLE","s0":...,"s1":...,"direction":"S0_TO_S1"}
+```
+
 ## Emergency Topics
 
 This conveyor listens to its own emergency topic:
@@ -211,25 +298,25 @@ conveyor/C0/feedback
 Normal status example:
 
 ```json
-{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0}
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0,"direction":"S0_TO_S1"}
 ```
 
 Done example:
 
 ```json
-{"id":"C0","state":"RX_DONE","state_elapsed_ms":40,"s0":0,"s1":0}
+{"id":"C0","state":"RX_DONE","state_elapsed_ms":40,"s0":0,"s1":0,"direction":"S0_TO_S1"}
 ```
 
 Error example:
 
 ```json
-{"id":"C0","state":"ERROR","state_elapsed_ms":20,"error":"RX_DONE_TIMEOUT","s0":1,"s1":1}
+{"id":"C0","state":"ERROR","state_elapsed_ms":20,"error":"RX_DONE_TIMEOUT","s0":1,"s1":1,"direction":"S0_TO_S1"}
 ```
 
 Bad command example:
 
 ```json
-{"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0}
+{"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0,"direction":"S0_TO_S1"}
 ```
 
 `state_elapsed_ms` is the number of milliseconds since the current state was
@@ -284,6 +371,10 @@ exact compact payloads like:
 {"type":"setkp","value":"0.010"}
 {"type":"setkd","value":"0.010"}
 {"type":"resetk"}
+{"type":"setdirection","value":"s0tos1"}
+{"type":"setdirection","value":"s1tos0"}
+{"type":"getdirection"}
+{"type":"getrssi"}
 ```
 
 Whitespace inside JSON fields is not currently handled by a real JSON parser.

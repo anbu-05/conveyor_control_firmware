@@ -1,10 +1,13 @@
 #include "app_state.h"
 
+#include <limits.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "config.h"
+#include "esp_wifi.h"
 #include "runtime_config.h"
 
 SemaphoreHandle_t motor_mutex;
@@ -36,6 +39,8 @@ motor_t motors[MOTOR_COUNT] = {
         .pcnt_unit = NULL,
     },
 };
+
+static conveyor_travel_direction_t travel_direction = CONVEYOR_TRAVEL_S0_TO_S1;
 
 /* Sensor state lives in a table so more sensors can be added later. */
 sensor_t sensors[SENSOR_COUNT] = {
@@ -137,6 +142,8 @@ bool start_motor(const char *name)
 {
     motor_t *motor = find_motor(name);
     int speed = runtime_config_run_speed_counts_per_sec();
+    int base_dir = CONVEYOR_MOTOR_FORWARD_DIRECTION;
+    conveyor_travel_direction_t dir = conveyor_get_travel_direction();
 
     if (motor == NULL) {
         return false;
@@ -146,8 +153,12 @@ bool start_motor(const char *name)
         speed = -speed;
     }
 
+    if (dir == CONVEYOR_TRAVEL_S1_TO_S0) {
+        base_dir = (base_dir == 0) ? 1 : 0;
+    }
+
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    if (CONVEYOR_MOTOR_FORWARD_DIRECTION == 0) {
+    if (base_dir == 0) {
         motor->target_speed = -speed;
     } else {
         motor->target_speed = speed;
@@ -181,4 +192,32 @@ void stop_all_motors(void)
         motors[i].speed_control = false;
     }
     xSemaphoreGive(motor_mutex);
+}
+
+conveyor_travel_direction_t conveyor_get_travel_direction(void)
+{
+    return travel_direction;
+}
+
+void conveyor_set_travel_direction(conveyor_travel_direction_t dir)
+{
+    travel_direction = dir;
+}
+
+const char *conveyor_travel_direction_name(conveyor_travel_direction_t dir)
+{
+    if (dir == CONVEYOR_TRAVEL_S0_TO_S1) {
+        return "S0_TO_S1";
+    }
+    return "S1_TO_S0";
+}
+
+int conveyor_get_rssi(void)
+{
+    wifi_ap_record_t ap_info;
+    esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
+    if (err != ESP_OK) {
+        return INT16_MIN;
+    }
+    return ap_info.rssi;
 }

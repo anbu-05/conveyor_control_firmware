@@ -1,5 +1,7 @@
 #include "app_state.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -391,6 +393,60 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         send_job_command(command, "OK CLEARERROR\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "setdirection") == 0) {
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        if (!conveyor_job_is_idle()) {
+            console_print("ERR JOB_BUSY\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[1], "s0tos1") == 0) {
+            conveyor_set_travel_direction(CONVEYOR_TRAVEL_S0_TO_S1);
+            console_print("OK SETDIRECTION S0_TO_S1\r\n");
+            return 0;
+        }
+        if (strcmp(argv[1], "s1tos0") == 0) {
+            conveyor_set_travel_direction(CONVEYOR_TRAVEL_S1_TO_S0);
+            console_print("OK SETDIRECTION S1_TO_S0\r\n");
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getdirection") == 0) {
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        console_printf("DIRECTION %s %s\r\n", CONVEYOR_ID, conveyor_travel_direction_name(conveyor_get_travel_direction()));
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getrssi") == 0) {
+        int rssi = 0;
+
+        if (argc != 1) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        rssi = conveyor_get_rssi();
+        if (rssi == INT16_MIN) {
+            console_print("ERR RSSI_UNAVAILABLE\r\n");
+            return 0;
+        }
+
+        console_printf("RSSI %s %d\r\n", CONVEYOR_ID, rssi);
         return 0;
     }
 

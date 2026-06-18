@@ -10,6 +10,11 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+typedef enum {
+    CONVEYOR_TRAVEL_S0_TO_S1,
+    CONVEYOR_TRAVEL_S1_TO_S0
+} conveyor_travel_direction_t;
+
 #define MOTOR_COUNT 1
 #define MOTOR_PWM_FREQ_HZ 20000
 #define MOTOR_PWM_RESOLUTION LEDC_TIMER_8_BIT
@@ -75,5 +80,10 @@ void configure_encoders(void);
 void microrl_task(void *arg);
 void motor_pid_task(void *arg);
 void sensor_reader_task(void *arg);
+
+conveyor_travel_direction_t conveyor_get_travel_direction(void);
+void conveyor_set_travel_direction(conveyor_travel_direction_t dir);
+const char *conveyor_travel_direction_name(conveyor_travel_direction_t dir);
+int conveyor_get_rssi(void);
 
 #endif

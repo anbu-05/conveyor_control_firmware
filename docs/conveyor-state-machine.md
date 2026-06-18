@@ -258,8 +258,8 @@ TX_WAIT_FOR_TX1_DETECT
 ```
 
 TX means this conveyor is pushing a tray out to another conveyor. During TX,
-the motor starts immediately. The state machine then waits for `tx1` / `S1` to detect
-the tray.
+the motor starts immediately in the configured travel direction. The state
+machine then waits for `tx1` to detect the tray.
 
 The timer starts when the TX job enters `TX_WAIT_FOR_TX1_DETECT`.
 
@@ -269,12 +269,13 @@ This timeout means:
 The tray did not reach tx1 in time.
 ```
 
-For every TX job, `tx1` is `S1`.
+When travel direction is `S0_TO_S1`, `tx1` is `S1`. When travel direction is
+`S1_TO_S0`, `tx1` is `S0`.
 
 Common causes:
 
 - The motor did not move.
-- The fixed motor direction is wrong for this wiring.
+- The configured travel direction is wrong for this wiring or handoff.
 - The tray is jammed before reaching `tx1`.
 - The sensor mapping is wrong.
 - The timeout value is too short for the conveyor speed.
@@ -319,7 +320,8 @@ This timeout means:
 The tray reached tx1, but tx1 did not clear in time.
 ```
 
-For every TX job, `tx1` is `S1`.
+When travel direction is `S0_TO_S1`, `tx1` is `S1`. When travel direction is
+`S1_TO_S0`, `tx1` is `S0`.
 
 Common causes:
 
@@ -350,7 +352,7 @@ RX_WAIT_FOR_RX0
 ```
 
 RX means this conveyor is waiting to receive a tray from another conveyor. At
-the start of RX, this conveyor does not move. It waits for `rx0` / `S0` to detect the
+the start of RX, this conveyor does not move. It waits for `rx0` to detect the
 incoming tray.
 
 The timer starts when the RX job enters `RX_WAIT_FOR_RX0`.
@@ -361,7 +363,8 @@ This timeout means:
 The incoming tray did not reach rx0 in time.
 ```
 
-For every RX job, `rx0` is `S0`.
+When travel direction is `S0_TO_S1`, `rx0` is `S0`. When travel direction is
+`S1_TO_S0`, `rx0` is `S1`.
 
 Common causes:
 
@@ -402,13 +405,14 @@ This timeout means:
 The tray entered at rx0, but did not reach rx1 in time.
 ```
 
-For every RX job, `rx1` is `S1`.
+When travel direction is `S0_TO_S1`, `rx1` is `S1`. When travel direction is
+`S1_TO_S0`, `rx1` is `S0`.
 
 Common causes:
 
 - The tray jammed between `rx0` and `rx1`.
 - The motor did not move after `rx0` detected.
-- The fixed motor direction is wrong for this wiring.
+- The configured travel direction is wrong for this wiring or handoff.
 - The `rx1` / `S1` sensor did not detect the tray.
 - The timeout value is too short for the conveyor length and speed.
 

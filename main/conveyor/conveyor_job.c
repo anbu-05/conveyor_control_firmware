@@ -68,6 +68,7 @@ void conveyor_job_get_status(conveyor_status_t *status)
     current_status.s0 = sensors[0].value;
     current_status.s1 = sensors[1].value;
     current_status.state_elapsed_ms = now_ms() - state_started_ms;
+    current_status.direction = conveyor_get_travel_direction();
     *status = current_status;
 }
 
@@ -108,17 +109,26 @@ static bool tray_detected(int sensor_index)
 
 static int tx1_sensor(void)
 {
-    return 1;
+    if (conveyor_get_travel_direction() == CONVEYOR_TRAVEL_S0_TO_S1) {
+        return 1;
+    }
+    return 0;
 }
 
 static int rx0_sensor(void)
 {
-    return 0;
+    if (conveyor_get_travel_direction() == CONVEYOR_TRAVEL_S0_TO_S1) {
+        return 0;
+    }
+    return 1;
 }
 
 static int rx1_sensor(void)
 {
-    return 1;
+    if (conveyor_get_travel_direction() == CONVEYOR_TRAVEL_S0_TO_S1) {
+        return 1;
+    }
+    return 0;
 }
 
 static void publish_status(void)
@@ -126,6 +136,7 @@ static void publish_status(void)
     current_status.s0 = sensors[0].value;
     current_status.s1 = sensors[1].value;
     current_status.state_elapsed_ms = now_ms() - state_started_ms;
+    current_status.direction = conveyor_get_travel_direction();
 
     console_printf("EVENT JOB %s %s\r\n",
                    CONVEYOR_ID,

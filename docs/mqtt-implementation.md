@@ -159,6 +159,10 @@ Normal command topic accepts:
 {"type":"setkp","value":"0.010"}
 {"type":"setkd","value":"0.010"}
 {"type":"resetk"}
+{"type":"setdirection","value":"s0tos1"}
+{"type":"setdirection","value":"s1tos0"}
+{"type":"getdirection"}
+{"type":"getrssi"}
 ```
 
 Emergency topics accept:
@@ -169,9 +173,9 @@ STOP
 ```
 
 Whitespace, extra fields, aliases, and old direction payloads are rejected.
-For `setkp` and `setkd`, only the shown field order is accepted. The decimal
-value may change, but it must be quoted and must have no more than 3 digits
-after the dot.
+For `setkp`, `setkd`, and `setdirection`, only the shown field order is
+accepted. Gain decimal values may change, but they must be quoted and must have
+no more than 3 digits after the dot.
 
 Rejected example:
 

@@ -80,7 +80,7 @@ current conveyor state was entered.
 Example:
 
 ```json
-{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0}
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0,"direction":"S0_TO_S1"}
 ```
 
 ## MQTT Defaults
@@ -106,10 +106,27 @@ MQTT accepts high-level compact payloads only:
 {"type":"setkp","value":"0.010"}
 {"type":"setkd","value":"0.010"}
 {"type":"resetk"}
+{"type":"setdirection","value":"s0tos1"}
+{"type":"setdirection","value":"s1tos0"}
+{"type":"getdirection"}
+{"type":"getrssi"}
 ```
 
 The PID gain payloads save `speed_kp` and `speed_kd` to NVS and publish an
 acknowledgement on the feedback topic.
+
+Laptop Mosquitto examples:
+
+```bash
+mosquitto_sub -h 192.168.1.126 -t 'conveyor/C0/#' -v
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getdirection"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setdirection","value":"s1tos0"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getrssi"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"tx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"rx"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/emergency -m '{"type":"emergency_stop"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"clear_error"}'
+```
 
 Tray status publishes once on MQTT connect, then only when `has_tray` changes.
 
@@ -204,6 +221,7 @@ ERR UNKNOWN_CONFIG
 ERR BAD_VALUE
 ERR CONFIG_BUSY
 ERR CONFIG_SAVE
+ERR RSSI_UNAVAILABLE
 ```
 
 ESP-IDF boot logs can still appear before `READY conveyor`. A wrapper should

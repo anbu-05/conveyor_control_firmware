@@ -1,8 +1,11 @@
 #include "mqtt_task.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "app_state.h"
 #include "config.h"
 #include "esp_err.h"
 #include "esp_event.h"
@@ -21,6 +24,8 @@ static volatile bool mqtt_connected;
 static bool tray_status_published;
 static bool last_has_tray;
 
+static void publish_bad_command(const char *error);
+
 bool mqtt_task_is_connected(void)
 {
     return mqtt_connected;
@@ -33,6 +38,33 @@ static void publish_text(const char *text)
     }
 
     esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_FEEDBACK, text, 0, 0, 0);
+}
+
+static void publish_direction(void)
+{
+    char message[96];
+    conveyor_travel_direction_t direction = conveyor_get_travel_direction();
+
+    snprintf(message,
+             sizeof(message),
+             "{\"id\":\"%s\",\"direction\":\"%s\"}",
+             CONVEYOR_ID,
+             conveyor_travel_direction_name(direction));
+    publish_text(message);
+}
+
+static void publish_rssi(void)
+{
+    char message[64];
+    int rssi = conveyor_get_rssi();
+
+    if (rssi == INT16_MIN) {
+        publish_bad_command("RSSI_UNAVAILABLE");
+        return;
+    }
+
+    snprintf(message, sizeof(message), "{\"id\":\"%s\",\"rssi\":%d}", CONVEYOR_ID, rssi);
+    publish_text(message);
 }
 
 static void publish_tray_status(bool force)
@@ -74,22 +106,24 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
     if (status->state == CONVEYOR_STATE_ERROR || status->state == CONVEYOR_STATE_ESTOP) {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
                  (unsigned long)status->state_elapsed_ms,
                  status->error,
                  status->s0,
-                 status->s1);
+                 status->s1,
+                 conveyor_travel_direction_name(status->direction));
     } else {
         snprintf(message,
                  sizeof(message),
-                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d}",
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
                  CONVEYOR_ID,
                  conveyor_state_name(status->state),
                  (unsigned long)status->state_elapsed_ms,
                  status->s0,
-                 status->s1);
+                 status->s1,
+                 conveyor_travel_direction_name(status->direction));
     }
 
     publish_text(message);
@@ -103,14 +137,20 @@ static void publish_bad_command(const char *error)
     conveyor_job_get_status(&status);
     snprintf(message,
              sizeof(message),
-             "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d}",
+             "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
              CONVEYOR_ID,
              conveyor_state_name(status.state),
              (unsigned long)status.state_elapsed_ms,
              error,
              status.s0,
-             status.s1);
+             status.s1,
+             conveyor_travel_direction_name(status.direction));
     publish_text(message);
+}
+
+static bool message_starts_with(const char *message, const char *prefix)
+{
+    return strncmp(message, prefix, strlen(prefix)) == 0;
 }
 
 static bool reject_if_busy(void)
@@ -319,6 +359,39 @@ static void handle_command_message(const char *message)
         }
 
         publish_all_gain_config();
+        return;
+    }
+
+    if (strcmp(message, "{\"type\":\"setdirection\",\"value\":\"s0tos1\"}") == 0) {
+        if (reject_if_busy()) {
+            return;
+        }
+        conveyor_set_travel_direction(CONVEYOR_TRAVEL_S0_TO_S1);
+        publish_direction();
+        return;
+    }
+
+    if (strcmp(message, "{\"type\":\"setdirection\",\"value\":\"s1tos0\"}") == 0) {
+        if (reject_if_busy()) {
+            return;
+        }
+        conveyor_set_travel_direction(CONVEYOR_TRAVEL_S1_TO_S0);
+        publish_direction();
+        return;
+    }
+
+    if (message_starts_with(message, "{\"type\":\"setdirection\",\"value\":")) {
+        publish_bad_command("BAD_VALUE");
+        return;
+    }
+
+    if (strcmp(message, "{\"type\":\"getdirection\"}") == 0) {
+        publish_direction();
+        return;
+    }
+
+    if (strcmp(message, "{\"type\":\"getrssi\"}") == 0) {
+        publish_rssi();
         return;
     }
 

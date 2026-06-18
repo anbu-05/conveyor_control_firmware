@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "app_state.h"
+
 typedef enum {
     CONVEYOR_CMD_START_TX,
     CONVEYOR_CMD_START_RX,
@@ -33,6 +35,7 @@ typedef struct {
     char error[32];
     int s0;
     int s1;
+    conveyor_travel_direction_t direction;
 } conveyor_status_t;
 
 typedef struct {

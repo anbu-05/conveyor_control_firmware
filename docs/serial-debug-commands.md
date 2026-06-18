@@ -738,3 +738,90 @@ Unknown command:
 ```text
 ERR UNKNOWN_COMMAND
 ```
+
+## `setdirection s0tos1`
+
+Changes the conveyor travel direction to S0→S1.
+
+Input:
+
+```text
+setdirection s0tos1
+```
+
+Requires the conveyor to be idle. Rejected with `ERR JOB_BUSY` otherwise.
+
+Success output:
+
+```text
+OK SETDIRECTION S0_TO_S1
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR JOB_BUSY
+```
+
+## `setdirection s1tos0`
+
+Changes the conveyor travel direction to S1→S0.
+
+Input, constraints, and outputs mirror the previous command, with `S1_TO_S0` in the OK line.
+
+## `getdirection`
+
+Reports the current travel direction.
+
+Input:
+
+```text
+getdirection
+```
+
+Output:
+
+```text
+DIRECTION C0 S0_TO_S1
+```
+
+or
+
+```text
+DIRECTION C0 S1_TO_S0
+```
+
+Error output:
+
+```text
+ERR BAD_ARGS
+```
+
+## `getrssi`
+
+Reports the current Wi-Fi RSSI of the ESP32 station.
+
+Input:
+
+```text
+getrssi
+```
+
+Success output:
+
+```text
+RSSI C0 -55
+```
+
+Error output when RSSI is unavailable (not connected or read failure):
+
+```text
+ERR RSSI_UNAVAILABLE
+```
+
+Error output for wrong argument count:
+
+```text
+ERR BAD_ARGS
+```

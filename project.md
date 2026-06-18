@@ -115,12 +115,20 @@ All-conveyors emergency topic: conveyor/all/emergency
 
 Useful laptop commands with Mosquitto clients:
 
-```text
+```bash
 mosquitto_sub -h 192.168.1.126 -t 'conveyor/C0/#' -v
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getdirection"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setdirection","value":"s0tos1"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setdirection","value":"s1tos0"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"getrssi"}'
 mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"tx"}'
 mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"rx"}'
 mosquitto_pub -h 192.168.1.126 -t conveyor/C0/emergency -m '{"type":"emergency_stop"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/all/emergency -m 'STOP'
 mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"clear_error"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setkp","value":"0.010"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"setkd","value":"0.010"}'
+mosquitto_pub -h 192.168.1.126 -t conveyor/C0/cmd -m '{"type":"resetk"}'
 ```
 
 Serial output is now token-based for a Python wrapper:
@@ -145,6 +153,9 @@ OK JOBTX
 OK JOBRX
 OK ESTOP
 OK CLEARERROR
+OK SETDIRECTION S0_TO_S1
+DIRECTION C0 S0_TO_S1
+RSSI C0 -55
 ERR UNKNOWN_COMMAND
 ERR UNKNOWN_MOTOR
 ERR BAD_ARGS
@@ -158,6 +169,7 @@ ERR UNKNOWN_CONFIG
 ERR BAD_VALUE
 ERR CONFIG_BUSY
 ERR CONFIG_SAVE
+ERR RSSI_UNAVAILABLE
 EVENT SENSOR S0 1 0
 EVENT ENCODER M0 120 100
 EVENT JOB C0 TX_WAIT_FOR_TX1_DETECT
@@ -316,6 +328,10 @@ MQTT commands are high-level JSON only:
 {"type":"setkp","value":"0.010"}
 {"type":"setkd","value":"0.010"}
 {"type":"resetk"}
+{"type":"setdirection","value":"s0tos1"}
+{"type":"setdirection","value":"s1tos0"}
+{"type":"getdirection"}
+{"type":"getrssi"}
 ```
 
 MQTT defaults:
