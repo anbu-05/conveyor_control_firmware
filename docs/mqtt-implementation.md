@@ -36,6 +36,9 @@ CONVEYOR_MQTT_TOPIC_EMERGENCY
 CONVEYOR_MQTT_TOPIC_FEEDBACK
 CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY
 CONVEYOR_MQTT_TOPIC_TRAY
+CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND
+CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT
+CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS
 ```
 
 The MQTT client ID is built from the conveyor ID:
@@ -108,6 +111,8 @@ On `MQTT_EVENT_CONNECTED`:
 - The client subscribes to this conveyor's command topic.
 - The client subscribes to this conveyor's emergency topic.
 - The client subscribes to the all-conveyors emergency topic.
+- The client subscribes to the centralized command topic.
+- The client publishes current conveyor status once to the centralized status topic.
 
 On `MQTT_EVENT_DISCONNECTED`:
 
@@ -144,6 +149,12 @@ Tray presence:
 conveyor/C0/tray
 ```
 
+Centralized command topic:
+
+```text
+factory/cnc_1/autodoor/command
+```
+
 ## Accepted Payloads
 
 The parser is deliberately simple and strict. It uses exact `strcmp()` checks,
@@ -172,6 +183,25 @@ Rejected example:
 ```text
 {"type":"tx","direction":"right"}
 ```
+
+The centralized command topic accepts JSON with a `command_id` and conveyor command type:
+
+```json
+{"command_id":"cmd_123","type":"tx"}
+{"command_id":"cmd_124","type":"rx"}
+{"command_id":"cmd_125","type":"emergency_stop"}
+{"command_id":"cmd_126","type":"clear_error"}
+```
+
+For backend compatibility, the centralized parser also accepts `command` instead of `type`:
+
+```json
+{"command_id":"cmd_123","command":"tx"}
+```
+
+The centralized command topic uses a constrained JSON field extractor for string
+fields. `command_id` must be present and must contain only simple identifier
+characters. Escaped characters inside parsed string fields are rejected.
 
 ## Command Handoff
 
@@ -242,6 +272,61 @@ Command parsing errors are also published to the feedback topic:
 ```json
 {"id":"C0","state":"IDLE","state_elapsed_ms":8420,"error":"UNKNOWN_COMMAND","s0":0,"s1":0}
 ```
+
+## Centralized Result Publishing
+
+Centralized command results are published to:
+
+```text
+factory/cnc_1/autodoor/result
+```
+
+Result payloads include the `command_id` from the request:
+
+```json
+{"command_id":"cmd_123","status":"received","message":"command accepted"}
+{"command_id":"cmd_123","status":"success","message":"tx complete"}
+```
+
+Centralized result statuses are:
+
+```text
+received
+success
+failure
+busy
+```
+
+`tx` and `rx` publish `received` after the command is queued. They publish
+`success` when the conveyor state reaches `TX_DONE` or `RX_DONE`. They publish
+`failure` if the job reaches `ERROR`.
+
+`emergency_stop` publishes `success` when the conveyor reaches `ESTOP`.
+`clear_error` publishes `success` when the conveyor returns to `IDLE`.
+
+## Centralized Status Publishing
+
+Centralized status is published to:
+
+```text
+factory/cnc_1/autodoor/status
+```
+
+Payload example:
+
+```json
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0,"has_tray":true}
+```
+
+Error payload example:
+
+```json
+{"id":"C0","state":"ERROR","state_elapsed_ms":20,"s0":1,"s1":1,"has_tray":false,"error":"RX_DONE_TIMEOUT"}
+```
+
+This topic is published once when MQTT connects and again whenever the conveyor
+state changes. It keeps conveyor state names; it does not translate them to
+autodoor terms.
 
 `state_elapsed_ms` is computed by the conveyor job state machine. It is the
 elapsed time, in milliseconds, since the current conveyor state was entered.

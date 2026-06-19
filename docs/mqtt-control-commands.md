@@ -23,6 +23,9 @@ Emergency topic: conveyor/C0/emergency
 All-conveyors emergency topic: conveyor/all/emergency
 Feedback topic: conveyor/C0/feedback
 Tray topic: conveyor/C0/tray
+Central command topic: factory/cnc_1/autodoor/command
+Central result topic: factory/cnc_1/autodoor/result
+Central status topic: factory/cnc_1/autodoor/status
 ```
 
 The MQTT status publish period defaults to `CONVEYOR_MQTT_STATUS_PERIOD_MS`.
@@ -49,6 +52,54 @@ The distance between `S0` and `S1` is smaller than the tray length. If a tray
 is on the conveyor, at least one sensor should be detecting it.
 
 ## Command Topic
+
+The centralized backend should publish conveyor commands to:
+
+```text
+factory/cnc_1/autodoor/command
+```
+
+Payloads should include a `command_id` so the ESP can correlate results:
+
+```json
+{"command_id":"cmd_123","type":"tx"}
+```
+
+The centralized command topic supports the same conveyor command types:
+
+```text
+tx
+rx
+emergency_stop
+clear_error
+```
+
+The ESP publishes command results to:
+
+```text
+factory/cnc_1/autodoor/result
+```
+
+Example results:
+
+```json
+{"command_id":"cmd_123","status":"received","message":"command accepted"}
+{"command_id":"cmd_123","status":"success","message":"tx complete"}
+```
+
+The ESP publishes conveyor state changes to:
+
+```text
+factory/cnc_1/autodoor/status
+```
+
+Example status:
+
+```json
+{"id":"C0","state":"TX_WAIT_FOR_TX1_CLEAR","state_elapsed_ms":320,"s0":1,"s1":0,"has_tray":true}
+```
+
+The older per-conveyor command topic remains available for direct conveyor control:
 
 Publish normal job commands to:
 

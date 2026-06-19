@@ -20,19 +20,126 @@ static esp_mqtt_client_handle_t mqtt_client;
 static volatile bool mqtt_connected;
 static bool tray_status_published;
 static bool last_has_tray;
+static bool central_status_published;
+static conveyor_state_t last_central_state;
+
+typedef struct {
+    bool active;
+    conveyor_cmd_type_t type;
+    char command_id[64];
+} central_command_tracker_t;
+
+static central_command_tracker_t central_command;
 
 bool mqtt_task_is_connected(void)
 {
     return mqtt_connected;
 }
 
-static void publish_text(const char *text)
+static void publish_to_topic(const char *topic, const char *text)
 {
-    if (!mqtt_connected || mqtt_client == NULL || text == NULL) {
+    if (!mqtt_connected || mqtt_client == NULL || topic == NULL || text == NULL) {
         return;
     }
 
-    esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_FEEDBACK, text, 0, 0, 0);
+    esp_mqtt_client_publish(mqtt_client, topic, text, 0, 0, 0);
+}
+
+static void publish_text(const char *text)
+{
+    publish_to_topic(CONVEYOR_MQTT_TOPIC_FEEDBACK, text);
+}
+
+static bool is_safe_json_text(const char *text)
+{
+    if (text == NULL || text[0] == '\0') {
+        return false;
+    }
+
+    for (size_t i = 0; text[i] != '\0'; i++) {
+        char ch = text[i];
+        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+              (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' ||
+              ch == '.' || ch == ':' || ch == '/')) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void publish_central_result(const char *command_id, const char *status, const char *detail)
+{
+    char message[CONVEYOR_MQTT_PAYLOAD_MAX];
+
+    if (command_id == NULL) {
+        command_id = "";
+    }
+    if (status == NULL) {
+        status = "failure";
+    }
+    if (detail == NULL) {
+        detail = "";
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "{\"command_id\":\"%s\",\"status\":\"%s\",\"message\":\"%s\"}",
+             command_id,
+             status,
+             detail);
+    publish_to_topic(CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT, message);
+}
+
+static void publish_central_status(const conveyor_status_t *status, bool force)
+{
+    conveyor_tray_status_t tray_status;
+    char message[CONVEYOR_MQTT_PAYLOAD_MAX];
+
+    if (status == NULL) {
+        return;
+    }
+
+    if (!force && central_status_published && status->state == last_central_state) {
+        return;
+    }
+
+    conveyor_job_get_tray_status(&tray_status);
+
+    if (status->state == CONVEYOR_STATE_ERROR || status->state == CONVEYOR_STATE_ESTOP) {
+        snprintf(message,
+                 sizeof(message),
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d,\"has_tray\":%s,\"error\":\"%s\"}",
+                 CONVEYOR_ID,
+                 conveyor_state_name(status->state),
+                 (unsigned long)status->state_elapsed_ms,
+                 status->s0,
+                 status->s1,
+                 tray_status.has_tray ? "true" : "false",
+                 status->error);
+    } else {
+        snprintf(message,
+                 sizeof(message),
+                 "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d,\"has_tray\":%s}",
+                 CONVEYOR_ID,
+                 conveyor_state_name(status->state),
+                 (unsigned long)status->state_elapsed_ms,
+                 status->s0,
+                 status->s1,
+                 tray_status.has_tray ? "true" : "false");
+    }
+
+    publish_to_topic(CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS, message);
+    central_status_published = true;
+    last_central_state = status->state;
+}
+
+static void publish_current_central_status(bool force)
+{
+    conveyor_status_t status;
+
+    conveyor_job_get_status(&status);
+    publish_central_status(&status, force);
 }
 
 static void publish_tray_status(bool force)
@@ -93,6 +200,40 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
     }
 
     publish_text(message);
+    publish_central_status(status, false);
+
+    if (!central_command.active) {
+        return;
+    }
+
+    if (status->state == CONVEYOR_STATE_ERROR) {
+        publish_central_result(central_command.command_id, "failure", status->error);
+        central_command.active = false;
+        return;
+    }
+
+    if (central_command.type == CONVEYOR_CMD_START_TX && status->state == CONVEYOR_STATE_TX_DONE) {
+        publish_central_result(central_command.command_id, "success", "tx complete");
+        central_command.active = false;
+        return;
+    }
+
+    if (central_command.type == CONVEYOR_CMD_START_RX && status->state == CONVEYOR_STATE_RX_DONE) {
+        publish_central_result(central_command.command_id, "success", "rx complete");
+        central_command.active = false;
+        return;
+    }
+
+    if (central_command.type == CONVEYOR_CMD_EMERGENCY_STOP && status->state == CONVEYOR_STATE_ESTOP) {
+        publish_central_result(central_command.command_id, "success", "emergency stop active");
+        central_command.active = false;
+        return;
+    }
+
+    if (central_command.type == CONVEYOR_CMD_CLEAR_ERROR && status->state == CONVEYOR_STATE_IDLE) {
+        publish_central_result(central_command.command_id, "success", "error cleared");
+        central_command.active = false;
+    }
 }
 
 static void publish_bad_command(const char *error)
@@ -180,6 +321,162 @@ static void handle_command_message(const char *message)
     publish_bad_command("UNKNOWN_COMMAND");
 }
 
+static bool central_command_type_from_text(const char *type, conveyor_cmd_type_t *command_type)
+{
+    if (type == NULL || command_type == NULL) {
+        return false;
+    }
+
+    if (strcmp(type, "tx") == 0) {
+        *command_type = CONVEYOR_CMD_START_TX;
+        return true;
+    }
+
+    if (strcmp(type, "rx") == 0) {
+        *command_type = CONVEYOR_CMD_START_RX;
+        return true;
+    }
+
+    if (strcmp(type, "emergency_stop") == 0) {
+        *command_type = CONVEYOR_CMD_EMERGENCY_STOP;
+        return true;
+    }
+
+    if (strcmp(type, "clear_error") == 0) {
+        *command_type = CONVEYOR_CMD_CLEAR_ERROR;
+        return true;
+    }
+
+    return false;
+}
+
+static bool extract_json_string_field(const char *json, const char *field, char *value, size_t value_size)
+{
+    char key[32];
+    const char *cursor = NULL;
+    size_t length = 0;
+
+    if (json == NULL || field == NULL || value == NULL || value_size == 0) {
+        return false;
+    }
+
+    snprintf(key, sizeof(key), "\"%s\"", field);
+    cursor = strstr(json, key);
+    if (cursor == NULL) {
+        return false;
+    }
+
+    cursor += strlen(key);
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+
+    if (*cursor != ':') {
+        return false;
+    }
+
+    cursor++;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+
+    if (*cursor != '"') {
+        return false;
+    }
+
+    cursor++;
+    while (cursor[length] != '\0' && cursor[length] != '"') {
+        if (cursor[length] == '\\' || length + 1 >= value_size) {
+            return false;
+        }
+        length++;
+    }
+
+    if (cursor[length] != '"') {
+        return false;
+    }
+
+    memcpy(value, cursor, length);
+    value[length] = '\0';
+    return true;
+}
+
+static void track_central_command(const char *command_id, conveyor_cmd_type_t type)
+{
+    central_command.active = true;
+    central_command.type = type;
+    snprintf(central_command.command_id, sizeof(central_command.command_id), "%s", command_id);
+}
+
+static void handle_central_command_message(const char *message)
+{
+    char command_id[64];
+    char type[32];
+    conveyor_cmd_t command;
+    conveyor_status_t status;
+
+    command_id[0] = '\0';
+    type[0] = '\0';
+
+    (void)extract_json_string_field(message, "command_id", command_id, sizeof(command_id));
+    if (!extract_json_string_field(message, "type", type, sizeof(type))) {
+        (void)extract_json_string_field(message, "command", type, sizeof(type));
+    }
+
+    if (!is_safe_json_text(command_id)) {
+        publish_central_result("", "failure", "missing or invalid command_id");
+        return;
+    }
+
+    if (!central_command_type_from_text(type, &command.type)) {
+        publish_central_result(command_id, "failure", "unknown command");
+        return;
+    }
+
+    if (central_command.active && command.type != CONVEYOR_CMD_EMERGENCY_STOP) {
+        publish_central_result(command_id, "busy", "command already active");
+        return;
+    }
+
+    if (command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) {
+        if (!conveyor_job_is_idle()) {
+            publish_central_result(command_id, "busy", "job busy");
+            return;
+        }
+
+        if (command.type == CONVEYOR_CMD_START_TX && !conveyor_job_has_tray()) {
+            publish_central_result(command_id, "failure", "no tray");
+            return;
+        }
+
+        if (command.type == CONVEYOR_CMD_START_RX && conveyor_job_has_tray()) {
+            publish_central_result(command_id, "failure", "tray present");
+            return;
+        }
+    }
+
+    if (command.type == CONVEYOR_CMD_CLEAR_ERROR) {
+        conveyor_job_get_status(&status);
+        if (status.state != CONVEYOR_STATE_ERROR && status.state != CONVEYOR_STATE_ESTOP) {
+            publish_central_result(command_id, "failure", "no error to clear");
+            return;
+        }
+    }
+
+    if (command.type == CONVEYOR_CMD_EMERGENCY_STOP && central_command.active) {
+        publish_central_result(central_command.command_id, "failure", "interrupted by emergency stop");
+        central_command.active = false;
+    }
+
+    if (!conveyor_job_send_command(command)) {
+        publish_central_result(command_id, "failure", "queue full");
+        return;
+    }
+
+    track_central_command(command_id, command.type);
+    publish_central_result(command_id, "received", "command accepted");
+}
+
 static void handle_emergency_message(const char *message)
 {
     conveyor_cmd_t command = {
@@ -227,7 +524,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CMD, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_EMERGENCY, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY, 0);
+        esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND, 0);
         publish_tray_status(true);
+        publish_current_central_status(true);
         ESP_LOGI(TAG, "MQTT connected");
         return;
     }
@@ -260,6 +559,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     if (strcmp(topic, CONVEYOR_MQTT_TOPIC_CMD) == 0) {
         handle_command_message(message);
+        return;
+    }
+
+    if (strcmp(topic, CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND) == 0) {
+        handle_central_command_message(message);
         return;
     }
 

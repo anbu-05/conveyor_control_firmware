@@ -15,6 +15,9 @@
 #define CONVEYOR_MQTT_TOPIC_FEEDBACK "conveyor/C0/feedback" /* Per-conveyor job/status feedback topic. */
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency" /* Shared emergency-stop topic for every conveyor. */
 #define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"   /* Tray-present status topic for this conveyor. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND "factory/cnc_1/autodoor/command" /* Central backend command topic. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT "factory/cnc_1/autodoor/result" /* Central backend command result topic. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS "factory/cnc_1/autodoor/status" /* Central backend conveyor status topic. */
 
 #define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
 #define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */
@@ -39,7 +42,7 @@
 #define CONVEYOR_MQTT_STATUS_TASK_STACK_SIZE 4096     /* FreeRTOS stack size for periodic MQTT status task. */
 #define CONVEYOR_MQTT_STATUS_TASK_PRIORITY 4          /* FreeRTOS priority for periodic MQTT status task. */
 #define CONVEYOR_MQTT_STATUS_PERIOD_MS 100            /* Default period between MQTT status publishes. */
-#define CONVEYOR_MQTT_PAYLOAD_MAX 160                 /* Max JSON payload buffer size for MQTT messages. */
+#define CONVEYOR_MQTT_PAYLOAD_MAX 256                 /* Max JSON payload buffer size for MQTT messages. */
 
 #define CONVEYOR_TIMEOUT_TX_DETECT_MS 5000            /* TX max time waiting for tray to reach S1. */
 #define CONVEYOR_TIMEOUT_TX_CLEAR_MS 5000             /* TX max time waiting for tray to clear S1. */
