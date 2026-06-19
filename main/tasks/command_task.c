@@ -505,6 +505,39 @@ static int execute_command(int argc, const char *const *argv)
         return 0;
     }
 
+    if (strcmp(argv[0], "watchpid") == 0) {
+        if (argc != 3) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[2], "on") == 0) {
+            pid_watch_motor = motor;
+            pid_watch_enabled = true;
+            console_printf("OK WATCHPID %s ON\r\n", motor->name);
+            return 0;
+        }
+
+        if (strcmp(argv[2], "off") == 0) {
+            if (pid_watch_motor == motor) {
+                pid_watch_enabled = false;
+                pid_watch_motor = NULL;
+            }
+
+            console_printf("OK WATCHPID %s OFF\r\n", motor->name);
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
     if (strcmp(argv[0], "getencoder") == 0) {
         int count = 0;
         int a = 0;

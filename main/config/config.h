@@ -23,6 +23,7 @@
 #define CONVEYOR_PWM_SLEW_STEP 1                      /* Max PWM change per 20 ms motor PID tick. */
 #define CONVEYOR_SPEED_PID_PWM_MAX 128                /* Highest PWM that speed control may command. */
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* BTS7960 direction value used for normal conveyor travel. */
+#define CONVEYOR_ENCODER_SPEED_SIGN -1                /* Multiplies encoder speed so forward motor travel is positive speed. */
 
 #define MOTOR_RPWM_GPIO GPIO_NUM_15                   /* BTS7960 right/forward PWM input. */
 #define MOTOR_LPWM_GPIO GPIO_NUM_16                   /* BTS7960 left/reverse PWM input. */

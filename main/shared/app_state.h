@@ -62,7 +62,9 @@ extern SemaphoreHandle_t motor_mutex;
 extern SemaphoreHandle_t console_mutex;
 extern volatile bool sensor_watch_enabled;
 extern volatile bool encoder_watch_enabled;
+extern volatile bool pid_watch_enabled;
 extern motor_t *encoder_watch_motor;
+extern motor_t *pid_watch_motor;
 extern motor_t motors[MOTOR_COUNT];
 extern sensor_t sensors[SENSOR_COUNT];
 

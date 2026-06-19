@@ -14,7 +14,9 @@ SemaphoreHandle_t motor_mutex;
 SemaphoreHandle_t console_mutex;
 volatile bool sensor_watch_enabled = false;
 volatile bool encoder_watch_enabled = false;
+volatile bool pid_watch_enabled = false;
 motor_t *encoder_watch_motor = NULL;
+motor_t *pid_watch_motor = NULL;
 
 /* Keep all motor state and pin config together so more motors can be added later. */
 motor_t motors[MOTOR_COUNT] = {

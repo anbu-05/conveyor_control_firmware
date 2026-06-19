@@ -17,6 +17,20 @@ typedef struct {
     int speed;
 } speed_pwm_point_t;
 
+typedef struct {
+    int target_speed;
+    int speed;
+    int error;
+    int base_pwm;
+    int p_step;
+    int d_step;
+    int requested_pwm;
+    int applied_pwm;
+    int direction;
+    int kp_milli;
+    int kd_milli;
+} pid_debug_t;
+
 static const speed_pwm_point_t speed_pwm_table[] = {
     {0, 0},
     {8, 360},
@@ -78,35 +92,46 @@ static int speed_to_base_pwm(int target_speed)
     return CONVEYOR_SPEED_PID_PWM_MAX;
 }
 
-static void slew_pwm_toward(int *pwm, int requested_pwm)
+static int direction_to_sign(int direction)
 {
-    if (*pwm < requested_pwm) {
-        *pwm += CONVEYOR_PWM_SLEW_STEP;
-        if (*pwm > requested_pwm) {
-            *pwm = requested_pwm;
+    if (direction == 0) {
+        return -1;
+    }
+
+    return 1;
+}
+
+static void slew_signed_pwm_toward(int *signed_pwm, int requested_signed_pwm)
+{
+    if (*signed_pwm < requested_signed_pwm) {
+        *signed_pwm += CONVEYOR_PWM_SLEW_STEP;
+        if (*signed_pwm > requested_signed_pwm) {
+            *signed_pwm = requested_signed_pwm;
         }
-    } else if (*pwm > requested_pwm) {
-        *pwm -= CONVEYOR_PWM_SLEW_STEP;
-        if (*pwm < requested_pwm) {
-            *pwm = requested_pwm;
+    } else if (*signed_pwm > requested_signed_pwm) {
+        *signed_pwm -= CONVEYOR_PWM_SLEW_STEP;
+        if (*signed_pwm < requested_signed_pwm) {
+            *signed_pwm = requested_signed_pwm;
         }
     }
 }
 
-static void update_motor_speed_control(motor_t *motor, int speed, int *last_error, int *direction, int *pwm)
+static void update_motor_speed_control(motor_t *motor, int speed, int *last_error, int *direction, int *pwm,
+                                       pid_debug_t *debug)
 {
     int target_speed = 0;
-    int target_abs = 0;
-    int speed_along_target = 0;
     int error = 0;
     int d_error = 0;
     int normalized_d_error = 0;
     int base_pwm = 0;
+    int base_pwm_magnitude = 0;
     int p_step = 0;
     int d_step = 0;
-    int requested_pwm = 0;
+    int requested_signed_pwm = 0;
+    int current_signed_pwm = 0;
+    int kp_milli = runtime_config_speed_kp_milli();
+    int kd_milli = runtime_config_speed_kd_milli();
     int current_direction = 0;
-    int wanted_direction = 0;
     int speed_control = 0;
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
@@ -119,46 +144,70 @@ static void update_motor_speed_control(motor_t *motor, int speed, int *last_erro
 
     if (!speed_control) {
         *last_error = 0;
+        if (debug != NULL) {
+            debug->target_speed = target_speed;
+            debug->speed = speed;
+            debug->error = 0;
+            debug->base_pwm = 0;
+            debug->p_step = 0;
+            debug->d_step = 0;
+            debug->requested_pwm = *pwm * direction_to_sign(*direction);
+            debug->applied_pwm = *pwm;
+            debug->direction = *direction;
+            debug->kp_milli = kp_milli;
+            debug->kd_milli = kd_milli;
+        }
         return;
     }
 
-    if (target_speed == 0) {
-        *last_error = 0;
-        requested_pwm = 0;
+    current_signed_pwm = *pwm * direction_to_sign(current_direction);
+    error = target_speed - speed;
+    d_error = error - *last_error;
+    normalized_d_error = (d_error * SPEED_D_BASE_DELAY_MS) / MOTOR_PID_DELAY_MS;
+    *last_error = error;
+
+    if (target_speed < 0) {
+        base_pwm_magnitude = speed_to_base_pwm(abs_int(target_speed));
+        base_pwm = -base_pwm_magnitude;
+    } else if (target_speed > 0) {
+        base_pwm_magnitude = speed_to_base_pwm(target_speed);
+        base_pwm = base_pwm_magnitude;
     } else {
-        if (target_speed < 0) {
-            target_abs = abs_int(target_speed);
-            wanted_direction = 0;
-        } else {
-            target_abs = target_speed;
-            wanted_direction = 1;
-        }
-
-        if (wanted_direction != current_direction && *pwm > 0) {
-            *last_error = 0;
-            requested_pwm = 0;
-        } else {
-            *direction = wanted_direction;
-            if (wanted_direction == 0) {
-                speed_along_target = -speed;
-            } else {
-                speed_along_target = speed;
-            }
-
-            error = target_abs - speed_along_target;
-            d_error = error - *last_error;
-            normalized_d_error = (d_error * SPEED_D_BASE_DELAY_MS) / MOTOR_PID_DELAY_MS;
-            *last_error = error;
-            base_pwm = speed_to_base_pwm(target_abs);
-            p_step = (error * runtime_config_speed_kp_milli()) / 1000;
-            d_step = (normalized_d_error * runtime_config_speed_kd_milli()) / 1000;
-            requested_pwm = base_pwm + p_step + d_step;
-        }
+        base_pwm = 0;
     }
 
-    requested_pwm = clamp_int(requested_pwm, 0, CONVEYOR_SPEED_PID_PWM_MAX);
-    slew_pwm_toward(pwm, requested_pwm);
-    *pwm = clamp_int(*pwm, 0, CONVEYOR_SPEED_PID_PWM_MAX);
+    p_step = (error * kp_milli) / 1000;
+    d_step = (normalized_d_error * kd_milli) / 1000;
+    requested_signed_pwm = base_pwm + p_step + d_step;
+    requested_signed_pwm = clamp_int(requested_signed_pwm,
+                                     -CONVEYOR_SPEED_PID_PWM_MAX,
+                                     CONVEYOR_SPEED_PID_PWM_MAX);
+    slew_signed_pwm_toward(&current_signed_pwm, requested_signed_pwm);
+    current_signed_pwm = clamp_int(current_signed_pwm,
+                                   -CONVEYOR_SPEED_PID_PWM_MAX,
+                                   CONVEYOR_SPEED_PID_PWM_MAX);
+
+    if (current_signed_pwm < 0) {
+        *direction = 0;
+        *pwm = -current_signed_pwm;
+    } else {
+        *direction = 1;
+        *pwm = current_signed_pwm;
+    }
+
+    if (debug != NULL) {
+        debug->target_speed = target_speed;
+        debug->speed = speed;
+        debug->error = error;
+        debug->base_pwm = base_pwm;
+        debug->p_step = p_step;
+        debug->d_step = d_step;
+        debug->requested_pwm = requested_signed_pwm;
+        debug->applied_pwm = *pwm;
+        debug->direction = *direction;
+        debug->kp_milli = kp_milli;
+        debug->kd_milli = kd_milli;
+    }
 
     xSemaphoreTake(motor_mutex, portMAX_DELAY);
     motor->pwm = *pwm;
@@ -197,6 +246,7 @@ void motor_pid_task(void *arg)
     int last_error = 0;
     int pwm = 0;
     int direction = 0;
+    pid_debug_t debug = {0};
     int watch_ticks = 0;
     int watch_period_ticks = ENCODER_WATCH_DELAY_MS / MOTOR_PID_DELAY_MS;
 
@@ -208,7 +258,7 @@ void motor_pid_task(void *arg)
 
     while (1) {
         ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &count));
-        raw_speed = ((count - last_count) * 1000) / MOTOR_PID_DELAY_MS;
+        raw_speed = (((count - last_count) * 1000) / MOTOR_PID_DELAY_MS) * CONVEYOR_ENCODER_SPEED_SIGN;
         last_count = count;
 
         speed_sample_sum -= speed_samples[speed_sample_index];
@@ -228,7 +278,7 @@ void motor_pid_task(void *arg)
         motor->current_speed = speed;
         xSemaphoreGive(motor_mutex);
 
-        update_motor_speed_control(motor, speed, &last_error, &direction, &pwm);
+        update_motor_speed_control(motor, speed, &last_error, &direction, &pwm, &debug);
         apply_motor_output(motor, direction, pwm);
 
         watch_ticks++;
@@ -237,6 +287,22 @@ void motor_pid_task(void *arg)
 
             if (encoder_watch_enabled && encoder_watch_motor == motor) {
                 console_printf("EVENT ENCODER %s %d %d\r\n", motor->name, count, speed);
+            }
+
+            if (pid_watch_enabled && pid_watch_motor == motor) {
+                console_printf("EVENT PID %s target=%d speed=%d error=%d base=%d p=%d d=%d requested=%d pwm=%d dir=%d kp=%d kd=%d\r\n",
+                               motor->name,
+                               debug.target_speed,
+                               debug.speed,
+                               debug.error,
+                               debug.base_pwm,
+                               debug.p_step,
+                               debug.d_step,
+                               debug.requested_pwm,
+                               debug.applied_pwm,
+                               debug.direction,
+                               debug.kp_milli,
+                               debug.kd_milli);
             }
         }
 
