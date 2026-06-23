@@ -482,6 +482,39 @@ static int execute_command(int argc, const char *const *argv)
         return 0;
     }
 
+    if (strcmp(argv[0], "watchmotor") == 0) {
+        if (argc != 3) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        if (strcmp(argv[2], "on") == 0) {
+            motor_watch_motor = motor;
+            motor_watch_enabled = true;
+            console_printf("OK WATCHMOTOR %s ON\r\n", motor->name);
+            return 0;
+        }
+
+        if (strcmp(argv[2], "off") == 0) {
+            if (motor_watch_motor == motor) {
+                motor_watch_enabled = false;
+                motor_watch_motor = NULL;
+            }
+
+            console_printf("OK WATCHMOTOR %s OFF\r\n", motor->name);
+            return 0;
+        }
+
+        console_print("ERR BAD_ARGS\r\n");
+        return 0;
+    }
+
     if (strcmp(argv[0], "getencoder") == 0) {
         int count = 0;
         int a = 0;
@@ -542,6 +575,52 @@ static int execute_command(int argc, const char *const *argv)
                        motor_target_speed,
                        motor_current_speed,
                        motor_speed_control);
+        return 0;
+    }
+
+    if (strcmp(argv[0], "getcurrent") == 0) {
+        int current_mA = 0;
+        int ris_current_mA = 0;
+        int lis_current_mA = 0;
+        int ris_bts_mv = 0;
+        int lis_bts_mv = 0;
+        int ris_adc_mv = 0;
+        int lis_adc_mv = 0;
+        int sample_ok = 0;
+
+        if (argc != 2) {
+            console_print("ERR BAD_ARGS\r\n");
+            return 0;
+        }
+
+        motor = find_motor(argv[1]);
+        if (motor == NULL) {
+            console_print("ERR UNKNOWN_MOTOR\r\n");
+            return 0;
+        }
+
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        current_mA = motor->current_mA;
+        ris_current_mA = motor->ris_current_mA;
+        lis_current_mA = motor->lis_current_mA;
+        ris_bts_mv = motor->ris_bts_mv;
+        lis_bts_mv = motor->lis_bts_mv;
+        ris_adc_mv = motor->ris_adc_mv;
+        lis_adc_mv = motor->lis_adc_mv;
+        sample_ok = motor->current_sample_ok ? 1 : 0;
+        xSemaphoreGive(motor_mutex);
+
+        console_printf("CURRENT %s %d %d %d %d %d %d %d %d %d\r\n",
+                       motor->name,
+                       current_mA,
+                       ris_current_mA,
+                       lis_current_mA,
+                       ris_bts_mv,
+                       lis_bts_mv,
+                       ris_adc_mv,
+                       lis_adc_mv,
+                       runtime_config_k_ilis(),
+                       sample_ok);
         return 0;
     }
 

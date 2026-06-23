@@ -9,5 +9,6 @@ idf_component_register(SRCS
                     "tasks/sensor_task.c"
                     "tasks/encoder_task.c"
                     "tasks/motor_pid_task.c"
+                    "tasks/current_sense_task.c"
                     INCLUDE_DIRS "." "config" "shared" "tasks" "conveyor"
-                    REQUIRES esp_driver_gpio esp_driver_ledc esp_driver_pcnt esp_wifi esp_event esp_netif nvs_flash mqtt microrl)
+                    REQUIRES esp_adc esp_driver_gpio esp_driver_ledc esp_driver_pcnt esp_wifi esp_event esp_netif nvs_flash mqtt microrl)

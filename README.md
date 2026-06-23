@@ -7,21 +7,25 @@ control.
 ## Hardware
 
 - Target: ESP32-S3
-- BTS7960 `RPWM` pin: GPIO15
-- BTS7960 `LPWM` pin: GPIO16
-- BTS7960 `REN` pin: GPIO6
-- BTS7960 `LEN` pin: GPIO7
+- BTS7960 `RPWM` pin: GPIO6
+- BTS7960 `LPWM` pin: GPIO7
+- BTS7960 `REN` pin: GPIO15
+- BTS7960 `LEN` pin: GPIO16
+- BTS7960/IBT-2 `LIS` pin: GPIO8 through a 2.2 kOhm / 4.7 kOhm divider
+- BTS7960/IBT-2 `RIS` pin: GPIO9 through a 2.2 kOhm / 4.7 kOhm divider
 - Encoder `M0` channel A: GPIO17
 - Encoder `M0` channel B: GPIO18
 - Sensor `S0`: GPIO4
 - Sensor `S1`: GPIO5
 - ESP32 ground and BTS7960 ground must be connected together.
 - Motor power should come from the motor power supply, not from the ESP32.
+- The current-sense divider scales a 5 V `RIS`/`LIS` output to about 3.41 V at the ESP32-S3 ADC pin.
+- Current uses `I_load = (V_is / 1000 ohm) * k_ilis`; default `k_ilis` is `8500` and can be tuned at runtime.
 - The sensor inputs are active-low in the current firmware.
 - The sensor inputs use external pullups. Internal pullups and pulldowns are disabled.
 
-Check your exact ESP32-S3 board pinout before wiring. GPIO15, GPIO16, GPIO6,
-GPIO7, GPIO17, and GPIO18 must be available on your board.
+Check your exact ESP32-S3 board pinout before wiring. GPIO6, GPIO7, GPIO15,
+GPIO16, GPIO17, and GPIO18 must be available on your board.
 
 ## Conveyor Sensor Reference
 
@@ -119,6 +123,7 @@ run_pwm
 run_speed_counts_per_sec
 speed_kp
 speed_kd
+k_ilis
 done_hold_ms
 tx_detect_timeout_ms
 tx_clear_timeout_ms
@@ -166,10 +171,22 @@ EVENT ENCODER M0 124 120
 EVENT ENCODER M0 116 -80
 ```
 
+Motor monitor event example:
+
+```text
+EVENT MOTOR M0 pos=120 speed=100 current_mA=550 avg_current_mA=530 ris_mA=550 lis_mA=12 pwm=64 dir=1 sample_ok=1
+```
+
 Encoder diagnostic example:
 
 ```text
 ENCODER M0 120 1 0
+```
+
+Current diagnostic example:
+
+```text
+CURRENT M0 550 550 12 65 1 44 1 8500 1
 ```
 
 Job event examples:
@@ -221,6 +238,7 @@ idf.py flash monitor
 - `main/tasks/command_task.c`: microrl serial command task and command handling.
 - `main/tasks/motor_task.c`: motor PWM/direction setup.
 - `main/tasks/motor_pid_task.c`: combined motor PID task, encoder count reading, speed calculation, and motor output.
+- `main/tasks/current_sense_task.c`: IBT-2/BTS7960 RIS/LIS ADC sampling and current conversion.
 - `main/tasks/mqtt_task.c`: WiFi/MQTT setup, JSON command parsing, MQTT status task, and feedback publishing.
 - `main/tasks/sensor_task.c`: sensor GPIO setup and polling task.
 - `main/tasks/encoder_task.c`: encoder PCNT setup.
@@ -238,6 +256,7 @@ idf.py flash monitor
 - `motor.pwm` slews toward the requested PWM by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
 - Direction reversals ramp PWM down to zero before changing the direction GPIO.
 - Speed measurement uses a 5-sample moving average without low startup bias.
+- BTS7960 current sensing is implemented for `M0` on GPIO8/GPIO9 with runtime `k_ilis` calibration.
 - Encoder GPIO17/GPIO18 are configured as inputs with internal pullups.
 - A 1000 ns PCNT glitch filter rejects very short encoder input noise.
 - Encoder filtering, zeroing, MQTT publishing, I control, and position control are not implemented yet.

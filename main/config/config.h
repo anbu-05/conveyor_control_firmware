@@ -25,10 +25,23 @@
 #define CONVEYOR_MOTOR_FORWARD_DIRECTION 1            /* BTS7960 direction value used for normal conveyor travel. */
 #define CONVEYOR_ENCODER_SPEED_SIGN -1                /* Multiplies encoder speed so forward motor travel is positive speed. */
 
-#define MOTOR_RPWM_GPIO GPIO_NUM_15                   /* BTS7960 right/forward PWM input. */
-#define MOTOR_LPWM_GPIO GPIO_NUM_16                   /* BTS7960 left/reverse PWM input. */
-#define MOTOR_REN_GPIO GPIO_NUM_6                     /* BTS7960 right enable pin. */
-#define MOTOR_LEN_GPIO GPIO_NUM_7                     /* BTS7960 left enable pin. */
+#define MOTOR_RPWM_GPIO GPIO_NUM_6                    /* BTS7960 right/forward PWM input. */
+#define MOTOR_LPWM_GPIO GPIO_NUM_7                    /* BTS7960 left/reverse PWM input. */
+#define MOTOR_REN_GPIO GPIO_NUM_15                    /* BTS7960 right enable pin. */
+#define MOTOR_LEN_GPIO GPIO_NUM_16                    /* BTS7960 left enable pin. */
+#define MOTOR_LIS_GPIO GPIO_NUM_8                     /* BTS7960 left/reverse current sense after resistor divider. */
+#define MOTOR_RIS_GPIO GPIO_NUM_9                     /* BTS7960 right/forward current sense after resistor divider. */
+
+#define BTS7960_LIS_ADC_CHANNEL ADC_CHANNEL_7         /* ESP32-S3 ADC1 channel for GPIO8. */
+#define BTS7960_RIS_ADC_CHANNEL ADC_CHANNEL_8         /* ESP32-S3 ADC1 channel for GPIO9. */
+#define BTS7960_CURRENT_DIVIDER_TOP_OHMS 2200         /* Resistor from BTS7960 IS output to ADC pin. */
+#define BTS7960_CURRENT_DIVIDER_BOTTOM_OHMS 4700      /* Resistor from ADC pin to ground. */
+#define BTS7960_CURRENT_R_IS_OHMS 1000                /* IBT-2 current-sense resistor. */
+#define BTS7960_CURRENT_K_ILIS 8500                   /* Nominal BTS7960 current sense ratio. Runtime key: k_ilis. */
+#define BTS7960_CURRENT_SAMPLE_COUNT 4                /* ADC samples averaged per current-sense update. */
+#define BTS7960_CURRENT_TASK_STACK_SIZE 4096          /* FreeRTOS stack size for current-sense task. */
+#define BTS7960_CURRENT_TASK_PRIORITY 5               /* FreeRTOS priority for current-sense task. */
+#define BTS7960_CURRENT_SAMPLE_DELAY_MS 20            /* Current-sense update period. */
 
 #define CONVEYOR_JOB_TASK_STACK_SIZE 4096             /* FreeRTOS stack size for the conveyor state-machine task. */
 #define CONVEYOR_JOB_TASK_PRIORITY 5                  /* FreeRTOS priority for the conveyor state-machine task. */

@@ -6,6 +6,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
+#include "hal/adc_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -39,11 +40,24 @@ typedef struct {
     gpio_num_t lpwm_gpio;
     gpio_num_t ren_gpio;
     gpio_num_t len_gpio;
+    gpio_num_t lis_gpio;
+    gpio_num_t ris_gpio;
     gpio_num_t encoder_a_gpio;
     gpio_num_t encoder_b_gpio;
+    adc_channel_t lis_adc_channel;
+    adc_channel_t ris_adc_channel;
     ledc_channel_t rpwm_ledc_channel;
     ledc_channel_t lpwm_ledc_channel;
     pcnt_unit_handle_t pcnt_unit;
+    int lis_adc_mv;
+    int ris_adc_mv;
+    int lis_bts_mv;
+    int ris_bts_mv;
+    int lis_current_mA;
+    int ris_current_mA;
+    int current_mA;
+    int current_avg_mA;
+    bool current_sample_ok;
 } motor_t;
 
 typedef struct {
@@ -58,8 +72,10 @@ extern SemaphoreHandle_t console_mutex;
 extern volatile bool sensor_watch_enabled;
 extern volatile bool encoder_watch_enabled;
 extern volatile bool pid_watch_enabled;
+extern volatile bool motor_watch_enabled;
 extern motor_t *encoder_watch_motor;
 extern motor_t *pid_watch_motor;
+extern motor_t *motor_watch_motor;
 extern motor_t motors[MOTOR_COUNT];
 extern sensor_t sensors[SENSOR_COUNT];
 
@@ -76,6 +92,7 @@ void configure_sensors(void);
 void configure_encoders(void);
 void microrl_task(void *arg);
 void motor_pid_task(void *arg);
+void current_sense_task(void *arg);
 void sensor_reader_task(void *arg);
 
 #endif

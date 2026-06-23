@@ -12,8 +12,10 @@ SemaphoreHandle_t console_mutex;
 volatile bool sensor_watch_enabled = false;
 volatile bool encoder_watch_enabled = false;
 volatile bool pid_watch_enabled = false;
+volatile bool motor_watch_enabled = false;
 motor_t *encoder_watch_motor = NULL;
 motor_t *pid_watch_motor = NULL;
+motor_t *motor_watch_motor = NULL;
 
 /* Keep all motor state and pin config together so more motors can be added later. */
 motor_t motors[MOTOR_COUNT] = {
@@ -31,11 +33,24 @@ motor_t motors[MOTOR_COUNT] = {
         .lpwm_gpio = MOTOR_LPWM_GPIO,
         .ren_gpio = MOTOR_REN_GPIO,
         .len_gpio = MOTOR_LEN_GPIO,
+        .lis_gpio = MOTOR_LIS_GPIO,
+        .ris_gpio = MOTOR_RIS_GPIO,
         .encoder_a_gpio = GPIO_NUM_17,
         .encoder_b_gpio = GPIO_NUM_18,
+        .lis_adc_channel = BTS7960_LIS_ADC_CHANNEL,
+        .ris_adc_channel = BTS7960_RIS_ADC_CHANNEL,
         .rpwm_ledc_channel = LEDC_CHANNEL_0,
         .lpwm_ledc_channel = LEDC_CHANNEL_1,
         .pcnt_unit = NULL,
+        .lis_adc_mv = 0,
+        .ris_adc_mv = 0,
+        .lis_bts_mv = 0,
+        .ris_bts_mv = 0,
+        .lis_current_mA = 0,
+        .ris_current_mA = 0,
+        .current_mA = 0,
+        .current_avg_mA = 0,
+        .current_sample_ok = false,
     },
 };
 

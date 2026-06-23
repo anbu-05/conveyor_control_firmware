@@ -357,6 +357,65 @@ ERR BAD_ARGS
 ERR UNKNOWN_MOTOR
 ```
 
+## `watchmotor M0 on`
+
+Continuously prints encoder position, measured speed, and BTS7960 current draw.
+
+Input:
+
+```text
+watchmotor M0 on
+```
+
+Effect:
+
+- Prints `EVENT MOTOR ...` lines about every 100 ms.
+- Uses GPIO17/GPIO18 PCNT position and speed from the motor PID task.
+- Uses the current-sense task readings from IBT-2 `RIS` on GPIO9 and `LIS` on GPIO8.
+- Selects motor current as the larger of `RIS` and `LIS`, then reports `avg_current_mA` as a 10-sample moving average of that selected current.
+
+Success output:
+
+```text
+OK WATCHMOTOR M0 ON
+```
+
+Example event output:
+
+```text
+EVENT MOTOR M0 pos=120 speed=100 current_mA=550 avg_current_mA=530 ris_mA=550 lis_mA=12 pwm=64 dir=1 sample_ok=1
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
+## `watchmotor M0 off`
+
+Stops the continuous motor monitor output.
+
+Input:
+
+```text
+watchmotor M0 off
+```
+
+Success output:
+
+```text
+OK WATCHMOTOR M0 OFF
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
 ## `getencoder M0`
 
 Prints one raw encoder diagnostic line.
@@ -407,6 +466,51 @@ Field order:
 ```text
 MOTOR <motor> <pwm> <direction> <position> <target_speed> <current_speed> <speed_control>
 ```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR UNKNOWN_MOTOR
+```
+
+## `getcurrent M0`
+
+Prints one BTS7960 current-sense diagnostic line.
+
+Input:
+
+```text
+getcurrent M0
+```
+
+Output:
+
+```text
+CURRENT M0 550 550 12 65 1 44 1 8500 1
+```
+
+Field order:
+
+```text
+CURRENT <motor> <current_mA> <ris_current_mA> <lis_current_mA> <ris_bts_mv> <lis_bts_mv> <ris_adc_mv> <lis_adc_mv> <k_ilis> <sample_ok>
+```
+
+Meaning:
+
+- `current_mA` is the larger of `ris_current_mA` and `lis_current_mA`.
+- `ris_adc_mv` and `lis_adc_mv` are calibrated ESP32 ADC pin voltages.
+- `ris_bts_mv` and `lis_bts_mv` reconstruct the IBT-2 `RIS`/`LIS` pin voltage before the resistor divider.
+- `sample_ok` is `1` when the latest ADC read succeeded.
+
+Current conversion:
+
+```text
+bts_mv = adc_mv * (2200 + 4700) / 4700
+current_mA = bts_mv * k_ilis / 1000
+```
+
+The default `k_ilis` is `8500` and can be tuned with `setconfig k_ilis <value>`.
 
 Error outputs:
 
@@ -467,6 +571,7 @@ CONFIG run_pwm 128
 CONFIG run_speed_counts_per_sec 100
 CONFIG speed_kp 0.500
 CONFIG speed_kd 0.000
+CONFIG k_ilis 8500
 CONFIG done_hold_ms 100
 CONFIG tx_detect_timeout_ms 5000
 CONFIG tx_clear_timeout_ms 5000
@@ -537,6 +642,7 @@ run_pwm                  0..255
 run_speed_counts_per_sec 0..100000
 speed_kp_milli           0..100000
 speed_kd_milli           0..100000
+k_ilis                  1000..30000
 done_hold_ms             0..60000
 tx_detect_timeout_ms     1..600000
 tx_clear_timeout_ms      1..600000

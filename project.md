@@ -4,7 +4,7 @@
 
 ESP-IDF starter project for controlling one motor through a BTS7960.
 
-Changed the motor driver output from MD30C-style one PWM plus one direction GPIO to BTS7960-style two PWM outputs plus two enable pins. The configured BTS7960 pins are `RPWM=GPIO15`, `LPWM=GPIO16`, `REN=GPIO6`, and `LEN=GPIO7`. `direction=1` drives `RPWM` with PWM and keeps `LPWM` at zero; `direction=0` drives `LPWM` with PWM and keeps `RPWM` at zero. `REN` and `LEN` are set high during PWM setup.
+Changed the motor driver output from MD30C-style one PWM plus one direction GPIO to BTS7960-style two PWM outputs plus two enable pins. The configured BTS7960 pins are `RPWM=GPIO6`, `LPWM=GPIO7`, `REN=GPIO15`, and `LEN=GPIO16`. `direction=1` drives `RPWM` with PWM and keeps `LPWM` at zero; `direction=0` drives `LPWM` with PWM and keeps `RPWM` at zero. `REN` and `LEN` are set high during PWM setup.
 
 Updated the encoder wiring to avoid the BTS7960 PWM pins. Encoder channel A is now GPIO17 and encoder channel B is now GPIO18.
 
@@ -208,6 +208,10 @@ CONFIG speed_kd 0.000
 - `target_pos`
 - `target_speed`
 - `current_speed`
+- `lis_gpio`
+- `ris_gpio`
+- `lis_adc_channel`
+- `ris_adc_channel`
 - `pos_control`
 - `speed_control`
 - `rpwm_gpio`
@@ -219,6 +223,15 @@ CONFIG speed_kd 0.000
 - `rpwm_ledc_channel`
 - `lpwm_ledc_channel`
 - `pcnt_unit`
+- `lis_adc_mv`
+- `ris_adc_mv`
+- `lis_bts_mv`
+- `ris_bts_mv`
+- `lis_current_mA`
+- `ris_current_mA`
+- `current_mA`
+- `current_avg_mA`
+- `current_sample_ok`
 
 `sensor_t` currently stores:
 
@@ -230,10 +243,12 @@ CONFIG speed_kd 0.000
 Current motor:
 
 - `M0`
-- RPWM GPIO: `GPIO_NUM_15`
-- LPWM GPIO: `GPIO_NUM_16`
-- REN GPIO: `GPIO_NUM_6`
-- LEN GPIO: `GPIO_NUM_7`
+- RPWM GPIO: `GPIO_NUM_6`
+- LPWM GPIO: `GPIO_NUM_7`
+- REN GPIO: `GPIO_NUM_15`
+- LEN GPIO: `GPIO_NUM_16`
+- LIS GPIO: `GPIO_NUM_8` through a 2.2 kOhm / 4.7 kOhm divider
+- RIS GPIO: `GPIO_NUM_9` through a 2.2 kOhm / 4.7 kOhm divider
 - Encoder A GPIO: `GPIO_NUM_17`
 - Encoder B GPIO: `GPIO_NUM_18`
 - RPWM LEDC channel: `LEDC_CHANNEL_0`
@@ -262,7 +277,10 @@ watchsensors on
 watchsensors off
 watchencoder M0 on
 watchencoder M0 off
+watchmotor M0 on
+watchmotor M0 off
 getencoder M0
+getcurrent M0
 getmotor M0
 gettray
 getconfig
@@ -286,7 +304,10 @@ clearerror
 - `watchsensors off`: disables sensor event printing.
 - `watchencoder M0 on`: enables encoder count and speed event printing.
 - `watchencoder M0 off`: disables raw encoder count event printing.
+- `watchmotor M0 on`: enables combined position, speed, PWM, direction, BTS7960 current, and 10-sample average current event printing. Motor current is selected as the larger of `RIS` and `LIS`.
+- `watchmotor M0 off`: disables combined motor monitor event printing.
 - `getencoder M0`: prints `ENCODER M0 <count> <gpio17_a> <gpio18_b>`.
+- `getcurrent M0`: prints `CURRENT M0 <current_mA> <ris_current_mA> <lis_current_mA> <ris_bts_mv> <lis_bts_mv> <ris_adc_mv> <lis_adc_mv> <k_ilis> <sample_ok>`.
 - `getmotor M0`: prints `MOTOR M0 <pwm> <direction> <position> <target_speed> <current_speed> <speed_control>`.
 - `gettray`: prints derived tray presence and raw `S0/S1` values.
 - `getconfig`: prints all editable runtime config values.
@@ -332,6 +353,7 @@ MQTT defaults:
 - `mqtt_status_task`: publishes periodic conveyor feedback when MQTT status output is enabled and publishes tray status when `has_tray` changes.
 - `conveyor_job_task`: owns the TX/RX state machine and submits speed/stop requests to the motor state.
 - `motor_pid_task`: reads PCNT, calculates smoothed speed, calculates a feed-forward base PWM plus P/D trim, slews actual PWM toward it, and writes direction GPIO plus LEDC PWM hardware.
+- `current_sense_task`: samples IBT-2 `LIS`/`RIS` on ADC1 GPIO8/GPIO9, compensates the resistor divider, converts through runtime `k_ilis`, and stores motor current in shared state.
 - `sensor_reader_task`: reads sensor GPIOs and prints sensor events when watching is enabled.
 - `motor_mutex`: protects motor struct reads and writes.
 - `console_mutex`: keeps command responses and sensor event lines from interleaving.
@@ -352,11 +374,11 @@ Current high-level job states:
 
 - Project name is `conveyor`.
 - Target is ESP32-S3 based on current `sdkconfig`.
-- GPIO15, GPIO16, GPIO6, GPIO7, GPIO17, and GPIO18 are valid on the actual board.
-- The BTS7960 `RPWM` pin is connected to GPIO15.
-- The BTS7960 `LPWM` pin is connected to GPIO16.
-- The BTS7960 `REN` pin is connected to GPIO6.
-- The BTS7960 `LEN` pin is connected to GPIO7.
+- GPIO6, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18 are valid on the actual board.
+- The BTS7960 `RPWM` pin is connected to GPIO6.
+- The BTS7960 `LPWM` pin is connected to GPIO7.
+- The BTS7960 `REN` pin is connected to GPIO15.
+- The BTS7960 `LEN` pin is connected to GPIO16.
 - Sensor `S0` is connected to GPIO4 with an external pullup.
 - Sensor `S1` is connected to GPIO5 with an external pullup.
 - `S0` is the entry sensor.

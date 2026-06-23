@@ -304,6 +304,42 @@ void motor_pid_task(void *arg)
                                debug.kp_milli,
                                debug.kd_milli);
             }
+
+            if (motor_watch_enabled && motor_watch_motor == motor) {
+                int motor_pwm = 0;
+                int motor_direction = 0;
+                int motor_position = 0;
+                int motor_current_speed = 0;
+                int motor_current_mA = 0;
+                int motor_current_avg_mA = 0;
+                int motor_ris_current_mA = 0;
+                int motor_lis_current_mA = 0;
+                int sample_ok = 0;
+
+                xSemaphoreTake(motor_mutex, portMAX_DELAY);
+                motor_pwm = motor->pwm;
+                motor_direction = motor->direction;
+                motor_position = motor->position;
+                motor_current_speed = motor->current_speed;
+                motor_current_mA = motor->current_mA;
+                motor_current_avg_mA = motor->current_avg_mA;
+                motor_ris_current_mA = motor->ris_current_mA;
+                motor_lis_current_mA = motor->lis_current_mA;
+                sample_ok = motor->current_sample_ok ? 1 : 0;
+                xSemaphoreGive(motor_mutex);
+
+                console_printf("EVENT MOTOR %s pos=%d speed=%d current_mA=%d avg_current_mA=%d ris_mA=%d lis_mA=%d pwm=%d dir=%d sample_ok=%d\r\n",
+                               motor->name,
+                               motor_position,
+                               motor_current_speed,
+                               motor_current_mA,
+                               motor_current_avg_mA,
+                               motor_ris_current_mA,
+                               motor_lis_current_mA,
+                               motor_pwm,
+                               motor_direction,
+                               sample_ok);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(MOTOR_PID_DELAY_MS));

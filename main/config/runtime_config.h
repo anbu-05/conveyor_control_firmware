@@ -10,6 +10,7 @@ int runtime_config_run_pwm(void); /* Direct-PWM debug value from run_pwm. */
 int runtime_config_run_speed_counts_per_sec(void); /* Job speed target from run_speed_counts_per_sec. */
 int runtime_config_speed_kp_milli(void); /* Speed P gain scaled by 1000. */
 int runtime_config_speed_kd_milli(void); /* Speed D gain scaled by 1000. */
+int runtime_config_k_ilis(void); /* BTS7960 current sense ratio used for current conversion. */
 uint32_t runtime_config_done_hold_ms(void); /* DONE-state hold time before IDLE. */
 uint32_t runtime_config_tx_detect_timeout_ms(void); /* TX wait-for-S1-detect timeout. */
 uint32_t runtime_config_tx_clear_timeout_ms(void); /* TX wait-for-S1-clear timeout. */
