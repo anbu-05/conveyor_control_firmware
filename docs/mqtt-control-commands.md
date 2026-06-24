@@ -23,9 +23,9 @@ Emergency topic: conveyor/C0/emergency
 All-conveyors emergency topic: conveyor/all/emergency
 Feedback topic: conveyor/C0/feedback
 Tray topic: conveyor/C0/tray
-Central command topic: factory/cnc_1/autodoor/command
-Central result topic: factory/cnc_1/autodoor/result
-Central status topic: factory/cnc_1/autodoor/status
+Central command topic: factory/conveyor/C0/node-command
+Central result topic: factory/conveyor/C0/result
+Central status topic: factory/conveyor/C0/node-status
 ```
 
 The MQTT status publish period defaults to `CONVEYOR_MQTT_STATUS_PERIOD_MS`.
@@ -56,41 +56,42 @@ is on the conveyor, at least one sensor should be detecting it.
 The centralized backend should publish conveyor commands to:
 
 ```text
-factory/cnc_1/autodoor/command
+factory/conveyor/C0/node-command
 ```
 
 Payloads should include a `command_id` so the ESP can correlate results:
 
 ```json
-{"command_id":"cmd_123","type":"tx"}
+{"command_id":"cmd_123","type":"transmit"}
 ```
 
 The centralized command topic supports the same conveyor command types:
 
 ```text
-tx
-rx
-emergency_stop
+transmit
+receive
+stop
 clear_error
+get_commands
 ```
 
 The ESP publishes command results to:
 
 ```text
-factory/cnc_1/autodoor/result
+factory/conveyor/C0/result
 ```
 
 Example results:
 
 ```json
-{"command_id":"cmd_123","status":"received","message":"command accepted"}
-{"command_id":"cmd_123","status":"success","message":"tx complete"}
+{"command_id":"cmd_123","command_status":"success","message":"received: command accepted"}
+{"command_id":"cmd_123","command_status":"success","message":"transmit complete"}
 ```
 
 The ESP publishes conveyor state changes to:
 
 ```text
-factory/cnc_1/autodoor/status
+factory/conveyor/C0/node-status
 ```
 
 Example status:

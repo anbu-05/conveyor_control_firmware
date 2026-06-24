@@ -15,9 +15,9 @@
 #define CONVEYOR_MQTT_TOPIC_FEEDBACK "conveyor/C0/feedback" /* Per-conveyor job/status feedback topic. */
 #define CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY "conveyor/all/emergency" /* Shared emergency-stop topic for every conveyor. */
 #define CONVEYOR_MQTT_TOPIC_TRAY "conveyor/C0/tray"   /* Tray-present status topic for this conveyor. */
-#define CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND "factory/cnc_1/autodoor/command" /* Central backend command topic. */
-#define CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT "factory/cnc_1/autodoor/result" /* Central backend command result topic. */
-#define CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS "factory/cnc_1/autodoor/status" /* Central backend conveyor status topic. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND "factory/conveyor/C0/node-command" /* Central backend command topic. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT "factory/conveyor/C0/result" /* Central backend command result topic. */
+#define CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS "factory/conveyor/C0/node-status" /* Central backend conveyor status topic. */
 
 #define CONVEYOR_RUN_PWM 64                           /* Default direct-PWM debug speed. Runtime key: run_pwm. */
 #define CONVEYOR_RUN_SPEED_COUNTS_PER_SEC 5000         /* Default closed-loop job speed in encoder counts/sec. */

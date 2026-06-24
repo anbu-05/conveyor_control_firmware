@@ -20,7 +20,7 @@ static esp_mqtt_client_handle_t mqtt_client;
 static volatile bool mqtt_connected;
 static bool tray_status_published;
 static bool last_has_tray;
-static bool central_status_published;
+static bool central_status_published = true;
 static conveyor_state_t last_central_state;
 
 typedef struct {
@@ -84,10 +84,21 @@ static void publish_central_result(const char *command_id, const char *status, c
 
     snprintf(message,
              sizeof(message),
-             "{\"command_id\":\"%s\",\"status\":\"%s\",\"message\":\"%s\"}",
+             "{\"command_id\":\"%s\",\"command_status\":\"%s\",\"message\":\"%s\"}",
              command_id,
              status,
              detail);
+    publish_to_topic(CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT, message);
+}
+
+static void publish_central_command_list(const char *command_id)
+{
+    char message[CONVEYOR_MQTT_PAYLOAD_MAX];
+
+    snprintf(message,
+             sizeof(message),
+             "{\"command_id\":\"%s\",\"command_status\":\"success\",\"message\":\"supported commands\",\"commands\":[\"transmit\",\"receive\",\"stop\",\"clear_error\",\"get_commands\"]}",
+             command_id);
     publish_to_topic(CONVEYOR_MQTT_TOPIC_CENTRAL_RESULT, message);
 }
 
@@ -132,14 +143,6 @@ static void publish_central_status(const conveyor_status_t *status, bool force)
     publish_to_topic(CONVEYOR_MQTT_TOPIC_CENTRAL_STATUS, message);
     central_status_published = true;
     last_central_state = status->state;
-}
-
-static void publish_current_central_status(bool force)
-{
-    conveyor_status_t status;
-
-    conveyor_job_get_status(&status);
-    publish_central_status(&status, force);
 }
 
 static void publish_tray_status(bool force)
@@ -213,19 +216,19 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
     }
 
     if (central_command.type == CONVEYOR_CMD_START_TX && status->state == CONVEYOR_STATE_TX_DONE) {
-        publish_central_result(central_command.command_id, "success", "tx complete");
+        publish_central_result(central_command.command_id, "success", "transmit complete");
         central_command.active = false;
         return;
     }
 
     if (central_command.type == CONVEYOR_CMD_START_RX && status->state == CONVEYOR_STATE_RX_DONE) {
-        publish_central_result(central_command.command_id, "success", "rx complete");
+        publish_central_result(central_command.command_id, "success", "receive complete");
         central_command.active = false;
         return;
     }
 
     if (central_command.type == CONVEYOR_CMD_EMERGENCY_STOP && status->state == CONVEYOR_STATE_ESTOP) {
-        publish_central_result(central_command.command_id, "success", "emergency stop active");
+        publish_central_result(central_command.command_id, "success", "stop active");
         central_command.active = false;
         return;
     }
@@ -327,17 +330,17 @@ static bool central_command_type_from_text(const char *type, conveyor_cmd_type_t
         return false;
     }
 
-    if (strcmp(type, "tx") == 0) {
+    if (strcmp(type, "transmit") == 0) {
         *command_type = CONVEYOR_CMD_START_TX;
         return true;
     }
 
-    if (strcmp(type, "rx") == 0) {
+    if (strcmp(type, "receive") == 0) {
         *command_type = CONVEYOR_CMD_START_RX;
         return true;
     }
 
-    if (strcmp(type, "emergency_stop") == 0) {
+    if (strcmp(type, "stop") == 0) {
         *command_type = CONVEYOR_CMD_EMERGENCY_STOP;
         return true;
     }
@@ -429,18 +432,22 @@ static void handle_central_command_message(const char *message)
     }
 
     if (!central_command_type_from_text(type, &command.type)) {
-        publish_central_result(command_id, "failure", "unknown command");
+        if (strcmp(type, "get_commands") == 0) {
+            publish_central_command_list(command_id);
+        } else {
+            publish_central_result(command_id, "failure", "unknown command");
+        }
         return;
     }
 
     if (central_command.active && command.type != CONVEYOR_CMD_EMERGENCY_STOP) {
-        publish_central_result(command_id, "busy", "command already active");
+        publish_central_result(command_id, "failure", "busy: command already active");
         return;
     }
 
     if (command.type == CONVEYOR_CMD_START_TX || command.type == CONVEYOR_CMD_START_RX) {
         if (!conveyor_job_is_idle()) {
-            publish_central_result(command_id, "busy", "job busy");
+            publish_central_result(command_id, "failure", "busy: job busy");
             return;
         }
 
@@ -474,7 +481,7 @@ static void handle_central_command_message(const char *message)
     }
 
     track_central_command(command_id, command.type);
-    publish_central_result(command_id, "received", "command accepted");
+    publish_central_result(command_id, "success", "received: command accepted");
 }
 
 static void handle_emergency_message(const char *message)
@@ -526,7 +533,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY, 0);
         esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CENTRAL_COMMAND, 0);
         publish_tray_status(true);
-        publish_current_central_status(true);
         ESP_LOGI(TAG, "MQTT connected");
         return;
     }

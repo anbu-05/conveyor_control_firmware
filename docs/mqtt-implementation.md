@@ -112,7 +112,6 @@ On `MQTT_EVENT_CONNECTED`:
 - The client subscribes to this conveyor's emergency topic.
 - The client subscribes to the all-conveyors emergency topic.
 - The client subscribes to the centralized command topic.
-- The client publishes current conveyor status once to the centralized status topic.
 
 On `MQTT_EVENT_DISCONNECTED`:
 
@@ -149,10 +148,10 @@ Tray presence:
 conveyor/C0/tray
 ```
 
-Centralized command topic:
+Centralized node command topic:
 
 ```text
-factory/cnc_1/autodoor/command
+factory/conveyor/C0/node-command
 ```
 
 ## Accepted Payloads
@@ -184,22 +183,23 @@ Rejected example:
 {"type":"tx","direction":"right"}
 ```
 
-The centralized command topic accepts JSON with a `command_id` and conveyor command type:
+The centralized node command topic accepts JSON with a `command_id` and conveyor command type:
 
 ```json
-{"command_id":"cmd_123","type":"tx"}
-{"command_id":"cmd_124","type":"rx"}
-{"command_id":"cmd_125","type":"emergency_stop"}
+{"command_id":"cmd_123","type":"transmit"}
+{"command_id":"cmd_124","type":"receive"}
+{"command_id":"cmd_125","type":"stop"}
 {"command_id":"cmd_126","type":"clear_error"}
+{"command_id":"cmd_127","type":"get_commands"}
 ```
 
 For backend compatibility, the centralized parser also accepts `command` instead of `type`:
 
 ```json
-{"command_id":"cmd_123","command":"tx"}
+{"command_id":"cmd_123","command":"transmit"}
 ```
 
-The centralized command topic uses a constrained JSON field extractor for string
+The centralized node command topic uses a constrained JSON field extractor for string
 fields. `command_id` must be present and must contain only simple identifier
 characters. Escaped characters inside parsed string fields are rejected.
 
@@ -278,38 +278,41 @@ Command parsing errors are also published to the feedback topic:
 Centralized command results are published to:
 
 ```text
-factory/cnc_1/autodoor/result
+factory/conveyor/C0/result
 ```
 
-Result payloads include the `command_id` from the request:
+Result payloads include the `command_id` from the request and use
+`command_status` instead of `status`:
 
 ```json
-{"command_id":"cmd_123","status":"received","message":"command accepted"}
-{"command_id":"cmd_123","status":"success","message":"tx complete"}
+{"command_id":"cmd_123","command_status":"success","message":"received: command accepted"}
+{"command_id":"cmd_123","command_status":"success","message":"transmit complete"}
 ```
 
-Centralized result statuses are:
+Centralized `command_status` values are only:
 
 ```text
-received
 success
 failure
-busy
 ```
 
-`tx` and `rx` publish `received` after the command is queued. They publish
-`success` when the conveyor state reaches `TX_DONE` or `RX_DONE`. They publish
-`failure` if the job reaches `ERROR`.
+Received and busy details are carried in the `message` field, for example
+`received: command accepted` or `busy: job busy`.
 
-`emergency_stop` publishes `success` when the conveyor reaches `ESTOP`.
+`transmit` and `receive` publish `success` with a received message after the
+command is queued. They publish another `success` when the conveyor state reaches
+`TX_DONE` or `RX_DONE`. They publish `failure` if the job reaches `ERROR`.
+
+`stop` publishes `success` when the conveyor reaches `ESTOP`.
 `clear_error` publishes `success` when the conveyor returns to `IDLE`.
+`get_commands` immediately publishes the supported command list.
 
 ## Centralized Status Publishing
 
-Centralized status is published to:
+Centralized node status is published to:
 
 ```text
-factory/cnc_1/autodoor/status
+factory/conveyor/C0/node-status
 ```
 
 Payload example:
@@ -324,9 +327,9 @@ Error payload example:
 {"id":"C0","state":"ERROR","state_elapsed_ms":20,"s0":1,"s1":1,"has_tray":false,"error":"RX_DONE_TIMEOUT"}
 ```
 
-This topic is published once when MQTT connects and again whenever the conveyor
-state changes. It keeps conveyor state names; it does not translate them to
-autodoor terms.
+This topic is published only when the conveyor state changes. It keeps conveyor
+state names and does not publish MQTT-connect snapshots or periodic heartbeat
+messages to the centralized node status topic.
 
 `state_elapsed_ms` is computed by the conveyor job state machine. It is the
 elapsed time, in milliseconds, since the current conveyor state was entered.
