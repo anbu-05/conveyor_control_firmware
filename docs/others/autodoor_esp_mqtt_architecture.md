@@ -41,15 +41,15 @@ Used by the ESP to send the result of a specific command back to the Python back
 
 Each result should include the same `command_id` received in the command message.
 
-Possible result statuses:
+Possible command statuses:
 
 ```text
 received
 success
 failure
+    busy
     timeout
-    error 
-busy
+    error
 ```
 
 Behavior:
@@ -65,7 +65,7 @@ Each result message should include:
 ```
 command_id: Same command_id received from the backend.
 
-status: success/failure.
+command_status: success/failure.
 
 message: Short human-readable detail about the result.
 
@@ -73,21 +73,21 @@ Example:
 
 {
   "command_id": "cmd_123",
-  "status": "failure",
+  "command_status": "failure",
   "message": "open limit switch not reached"
 }
 ```
-## 3. Status Topic
+## 3. Node Status Topic
 
 ```text
-factory/cnc_1/autodoor/status
+factory/cnc_1/autodoor/node_status
 ```
 
 ESP publishes to this topic.
 
 Used by the ESP to publish the latest auto door state whenever the state changes.
 
-Possible door statuses:
+Possible node statuses:
 
 ```text
 opened
@@ -105,12 +105,12 @@ factory/cnc_1/autodoor/command
 
 Python backend subscribes:
 factory/cnc_1/autodoor/result
-factory/cnc_1/autodoor/status
+factory/cnc_1/autodoor/node_status
 
 ESP subscribes:
 factory/cnc_1/autodoor/command
 
 ESP publishes:
 factory/cnc_1/autodoor/result
-factory/cnc_1/autodoor/status
+factory/cnc_1/autodoor/node_status
 ```

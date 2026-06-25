@@ -1,6 +1,6 @@
 # Conveyor MQTT Topic System
 
-This conveyor firmware supports the centralized MQTT topic pattern used by the backend.
+This document defines the minimal backend-facing MQTT contract for one conveyor ESP.
 
 The three main centralized topics are:
 
@@ -49,7 +49,7 @@ Command summary:
 - `clear_error`: clears an error or stopped state and returns the conveyor to idle when safe.
 - `get_commands`: asks the ESP to publish the full list of supported command types on the result topic.
 
-`tray_transmit` and `tray_receive` are used instead of plain `transmit` and `receive` so the command names do not conflict with `command_status: "receive"`.
+`tray_transmit` and `tray_receive` are used instead of plain `transmit` and `receive` so the command names do not conflict with `command_status: "received"`.
 
 ## Result Topic
 
@@ -61,25 +61,23 @@ factory/conveyor/C0/result
 
 Each result includes the same `command_id` received in the command message.
 
-Every valid command should first produce a `receive` result so the backend knows the ESP received the command:
+Every valid command should first produce a `received` result so the backend knows the ESP received the command:
 
 ```json
 {
   "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit",
-  "command_status": "receive",
+  "command_status": "received",
   "message": "command received"
 }
 ```
 
-The acknowledgement status is called `receive` because that is the shared factory contract name used by the other nodes. The conveyor motion command is named `tray_receive` to avoid confusion.
+The acknowledgement status is `received`, matching the shared factory contract used by the other ESP nodes. The conveyor motion command is named `tray_receive` to avoid confusion with this acknowledgement status.
 
 Final command result example:
 
 ```json
 {
   "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit",
   "command_status": "success",
   "message": "tray transmit complete"
 }
@@ -88,19 +86,31 @@ Final command result example:
 `command_status` values are:
 
 ```text
-receive
+received
 success
 failure
 ```
 
 `success` and `failure` describe the final command outcome. Conditions such as busy or rejected are described in the `message` field.
 
+Command result flow:
+
+```text
+ack_test      -> received
+tray_transmit -> received -> success/failure
+tray_receive  -> received -> success/failure
+stop          -> received -> success/failure
+clear_error   -> received -> success/failure
+get_commands  -> received -> success/failure
+```
+
+The `stop` command should also publish `received` first, then a final `success` or `failure` result.
+
 Example busy response:
 
 ```json
 {
   "command_id": "cmd_tray_transmit_002",
-  "command": "tray_transmit",
   "command_status": "failure",
   "message": "rejected: busy - conveyor job already active"
 }
@@ -111,7 +121,6 @@ Example `get_commands` response:
 ```json
 {
   "command_id": "cmd_get_commands_001",
-  "command": "get_commands",
   "command_status": "success",
   "message": "supported commands",
   "commands": ["ack_test", "tray_transmit", "tray_receive", "stop", "clear_error", "get_commands"]
@@ -131,10 +140,7 @@ Example status payload:
 ```json
 {
   "id": "C0",
-  "state": "TX_WAIT_FOR_TX1_CLEAR",
-  "state_elapsed_ms": 320,
-  "s0": 1,
-  "s1": 0,
+  "status": "transmitting",
   "has_tray": true
 }
 ```
@@ -144,200 +150,20 @@ The ESP publishes `node_status` only when the conveyor state changes. It does no
 Important fields:
 
 - `id`: conveyor ID.
-- `state`: current conveyor state.
-- `state_elapsed_ms`: milliseconds since this state started.
-- `s0`, `s1`: raw sensor readings.
+- `status`: simple machine-level conveyor status.
 - `has_tray`: true when either conveyor sensor sees a tray.
-- `error`: included only for error or stopped states.
+
+Possible node statuses:
+
+```text
+idle
+transmitting
+receiving
+stopped
+error
+unknown
+```
+
+Firmware internals such as raw sensor values, state machine names, elapsed state timing, and other debugging details should not be part of the main backend-facing `node_status` payload. These debugging details should move to serial debugging instead.
 
 The previous conveyor-specific MQTT topics will be reworked into this three-topic system instead of being kept as separate public topics.
-
-## Commands And Expected Responses
-
-### ack_test
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_ack_001",
-  "command": "ack_test"
-}
-```
-
-Expected response:
-
-```json
-{
-  "command_id": "cmd_ack_001",
-  "command": "ack_test",
-  "command_status": "receive",
-  "message": "command received"
-}
-```
-
-### tray_transmit
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit"
-}
-```
-
-Expected initial response:
-
-```json
-{
-  "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit",
-  "command_status": "receive",
-  "message": "command received"
-}
-```
-
-Expected success response:
-
-```json
-{
-  "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit",
-  "command_status": "success",
-  "message": "tray transmit complete"
-}
-```
-
-Possible failure response:
-
-```json
-{
-  "command_id": "cmd_tray_transmit_001",
-  "command": "tray_transmit",
-  "command_status": "failure",
-  "message": "rejected: no_tray - no tray is present on the conveyor"
-}
-```
-
-### tray_receive
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_tray_receive_001",
-  "command": "tray_receive"
-}
-```
-
-Expected initial response:
-
-```json
-{
-  "command_id": "cmd_tray_receive_001",
-  "command": "tray_receive",
-  "command_status": "receive",
-  "message": "command received"
-}
-```
-
-Expected success response:
-
-```json
-{
-  "command_id": "cmd_tray_receive_001",
-  "command": "tray_receive",
-  "command_status": "success",
-  "message": "tray receive complete"
-}
-```
-
-Possible failure response:
-
-```json
-{
-  "command_id": "cmd_tray_receive_001",
-  "command": "tray_receive",
-  "command_status": "failure",
-  "message": "rejected: tray_present - tray is already present on the conveyor"
-}
-```
-
-### stop
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_stop_001",
-  "command": "stop"
-}
-```
-
-Expected response:
-
-```json
-{
-  "command_id": "cmd_stop_001",
-  "command": "stop",
-  "command_status": "success",
-  "message": "stop accepted"
-}
-```
-
-### clear_error
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_clear_error_001",
-  "command": "clear_error"
-}
-```
-
-Expected success response:
-
-```json
-{
-  "command_id": "cmd_clear_error_001",
-  "command": "clear_error",
-  "command_status": "success",
-  "message": "error cleared"
-}
-```
-
-Possible failure response:
-
-```json
-{
-  "command_id": "cmd_clear_error_001",
-  "command": "clear_error",
-  "command_status": "failure",
-  "message": "rejected: no_error - conveyor is not in error or stopped state"
-}
-```
-
-### get_commands
-
-Payload:
-
-```json
-{
-  "command_id": "cmd_get_commands_001",
-  "command": "get_commands"
-}
-```
-
-Expected response:
-
-```json
-{
-  "command_id": "cmd_get_commands_001",
-  "command": "get_commands",
-  "command_status": "success",
-  "message": "supported commands",
-  "commands": ["ack_test", "tray_transmit", "tray_receive", "stop", "clear_error", "get_commands"]
-}
-```
