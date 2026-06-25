@@ -47,7 +47,7 @@ Command summary:
 - `tray_receive`: arms the conveyor to receive an incoming tray. The motor starts when the entry sensor detects the tray.
 - `stop`: immediately stops the conveyor and puts the node into the stopped safety state. This firmware does not currently have a separate soft stop and emergency stop, so `stop` is the safety stop command.
 - `clear_error`: clears an error or stopped state and returns the conveyor to idle when safe.
-- `get_commands`: asks the ESP to publish the full list of supported command types on the result topic.
+- `get_commands`: asks the ESP to publish the full list of supported commands and their parameters on the result topic.
 
 `tray_transmit` and `tray_receive` are used instead of plain `transmit` and `receive` so the command names do not conflict with `command_status: "received"`.
 
@@ -123,9 +123,135 @@ Example `get_commands` response:
   "command_id": "cmd_get_commands_001",
   "command_status": "success",
   "message": "supported commands",
-  "commands": ["ack_test", "tray_transmit", "tray_receive", "stop", "clear_error", "get_commands"]
+  "commands": [
+    {
+      "command": "ack_test",
+      "required_params": [],
+      "optional_params": []
+    },
+    {
+      "command": "tray_transmit",
+      "required_params": [],
+      "optional_params": [
+        {
+          "name": "speed_counts_per_sec",
+          "type": "integer",
+          "default": 5000,
+          "min": 0,
+          "max": 100000,
+          "description": "Motor speed target for the transmit job, in encoder counts per second"
+        },
+        {
+          "name": "detect_timeout_ms",
+          "type": "integer",
+          "default": 5000,
+          "min": 1,
+          "max": 600000,
+          "description": "Maximum time to wait for the tray to reach the exit sensor"
+        },
+        {
+          "name": "clear_timeout_ms",
+          "type": "integer",
+          "default": 5000,
+          "min": 1,
+          "max": 600000,
+          "description": "Maximum time to wait for the tray to clear the exit sensor"
+        },
+        {
+          "name": "done_hold_ms",
+          "type": "integer",
+          "default": 100,
+          "min": 0,
+          "max": 60000,
+          "description": "Time to keep the completed state visible before returning to idle"
+        }
+      ]
+    },
+    {
+      "command": "tray_receive",
+      "required_params": [],
+      "optional_params": [
+        {
+          "name": "speed_counts_per_sec",
+          "type": "integer",
+          "default": 5000,
+          "min": 0,
+          "max": 100000,
+          "description": "Motor speed target for the receive job, in encoder counts per second"
+        },
+        {
+          "name": "detect_timeout_ms",
+          "type": "integer",
+          "default": 5000,
+          "min": 1,
+          "max": 600000,
+          "description": "Maximum time to wait for an incoming tray at the entry sensor"
+        },
+        {
+          "name": "done_timeout_ms",
+          "type": "integer",
+          "default": 5000,
+          "min": 1,
+          "max": 600000,
+          "description": "Maximum time to wait for the incoming tray to reach the final sensor"
+        },
+        {
+          "name": "done_hold_ms",
+          "type": "integer",
+          "default": 100,
+          "min": 0,
+          "max": 60000,
+          "description": "Time to keep the completed state visible before returning to idle"
+        }
+      ]
+    },
+    {
+      "command": "stop",
+      "required_params": [],
+      "optional_params": []
+    },
+    {
+      "command": "clear_error",
+      "required_params": [],
+      "optional_params": []
+    },
+    {
+      "command": "get_commands",
+      "required_params": [],
+      "optional_params": []
+    }
+  ]
 }
 ```
+
+The `get_commands` result should return every supported command with its parameters. `required_params` lists parameters that must be present in the command payload. `optional_params` lists parameters that may be omitted; each optional parameter must include its default value. Commands that do not take extra parameters should return empty arrays for both fields.
+
+Parameter entries should use this shape:
+
+```json
+{
+  "name": "example_param",
+  "type": "number",
+  "description": "Short description of the parameter"
+}
+```
+
+Optional parameter entries should also include `default`:
+
+```json
+{
+  "name": "example_optional_param",
+  "type": "number",
+  "default": 1000,
+  "min": 0,
+  "max": 10000,
+  "description": "Short description of the optional parameter"
+}
+```
+
+`command_id` and `command` are common command envelope fields, so they do not need to be repeated as per-command parameters.
+
+The current firmware stores these movement defaults as runtime configuration values: `run_speed_counts_per_sec`, `tx_detect_timeout_ms`, `tx_clear_timeout_ms`, `rx_detect_timeout_ms`, `rx_done_timeout_ms`, and `done_hold_ms`. The backend-facing command parameters use shorter command-local names because the meaning is already scoped by `tray_transmit` or `tray_receive`.
 
 ## Node Status Topic
 
