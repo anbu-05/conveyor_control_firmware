@@ -125,11 +125,32 @@ tx_clear_timeout_ms
 rx_detect_timeout_ms
 rx_done_timeout_ms
 mqtt_status_period_ms
+wifi_ssid
+wifi_pass
+mqtt_broker_uri
+mqtt_topic_cmd
+mqtt_topic_emergency
+mqtt_topic_feedback
+mqtt_topic_all_emergency
+mqtt_topic_tray
 ```
 
 Use the serial debug commands `getconfig`, `setconfig`, and `resetconfig`.
 Use `setkp` and `setkd` for decimal speed gain tuning. Use `resetk` to restore
 only the P/D speed gains to their defaults.
+
+Examples:
+
+```text
+setconfig wifi_ssid thrd_warehouse
+setconfig wifi_pass thrd@789
+setconfig mqtt_broker_uri mqtt://192.168.1.126
+setconfig mqtt_topic_cmd conveyor/C0/cmd
+```
+
+WiFi credentials and broker URI are applied on next WiFi/MQTT initialization.
+MQTT publish topics use updated runtime values immediately, and command or
+emergency topic changes refresh active subscriptions when MQTT is connected.
 
 ## Detailed Docs
 

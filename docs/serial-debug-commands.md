@@ -473,6 +473,14 @@ CONFIG tx_clear_timeout_ms 5000
 CONFIG rx_detect_timeout_ms 5000
 CONFIG rx_done_timeout_ms 5000
 CONFIG mqtt_status_period_ms 100
+CONFIG wifi_ssid thrd_warehouse
+CONFIG wifi_pass thrd@789
+CONFIG mqtt_broker_uri mqtt://192.168.1.126
+CONFIG mqtt_topic_cmd conveyor/C0/cmd
+CONFIG mqtt_topic_emergency conveyor/C0/emergency
+CONFIG mqtt_topic_feedback conveyor/C0/feedback
+CONFIG mqtt_topic_all_emergency conveyor/all/emergency
+CONFIG mqtt_topic_tray conveyor/C0/tray
 ```
 
 ## `getconfig run_pwm`
@@ -513,6 +521,9 @@ Effect:
 - Rejects the change if the conveyor state machine is not `IDLE`.
 - Saves the value to NVS.
 - Updates the RAM value used by later jobs.
+- MQTT publish topics use updated RAM values immediately.
+- MQTT command and emergency topic changes refresh active subscriptions when MQTT is connected.
+- WiFi SSID, WiFi password, and MQTT broker URI changes are saved and used on next MQTT/WiFi initialization.
 
 Success output:
 
@@ -543,6 +554,25 @@ tx_clear_timeout_ms      1..600000
 rx_detect_timeout_ms     1..600000
 rx_done_timeout_ms       1..600000
 mqtt_status_period_ms    100..60000
+wifi_ssid                1..31 chars
+wifi_pass                1..63 chars
+mqtt_broker_uri          1..127 chars
+mqtt_topic_cmd           1..95 chars
+mqtt_topic_emergency     1..95 chars
+mqtt_topic_feedback      1..95 chars
+mqtt_topic_all_emergency 1..95 chars
+mqtt_topic_tray          1..95 chars
+```
+
+String values cannot contain spaces because serial commands are split on whitespace.
+
+Examples:
+
+```text
+setconfig wifi_ssid thrd_warehouse
+setconfig wifi_pass thrd@789
+setconfig mqtt_broker_uri mqtt://192.168.1.126
+setconfig mqtt_topic_cmd conveyor/C0/cmd
 ```
 
 Use `setkp <decimal>` and `setkd <decimal>` for normal speed gain tuning.
@@ -563,7 +593,7 @@ resetconfig
 Effect:
 
 - Rejects the reset if the conveyor state machine is not `IDLE`.
-- Restores all editable values to compile-time defaults.
+- Restores all editable numeric and WiFi/MQTT string values to compile-time defaults.
 - Saves defaults to NVS.
 
 Success output:

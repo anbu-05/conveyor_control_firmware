@@ -20,10 +20,22 @@ uint32_t runtime_config_mqtt_status_period_ms(void); /* MQTT status publish peri
 bool runtime_config_get_value(const char *name, int32_t *value); /* Reads one runtime config value by serial key name. */
 bool runtime_config_value_is_valid(const char *name, int32_t value); /* Checks one runtime config value before saving. */
 bool runtime_config_set_value(const char *name, int32_t value); /* Saves one runtime config value to NVS and RAM. */
+bool runtime_config_get_string(const char *name, const char **value); /* Reads one string runtime config value by serial key name. */
+bool runtime_config_string_is_valid(const char *name, const char *value); /* Checks one string runtime config value before saving. */
+bool runtime_config_set_string(const char *name, const char *value); /* Saves one string runtime config value to NVS and RAM. */
 bool runtime_config_set_speed_kp_milli(int32_t value); /* Saves speed_kp_milli; used by the setkp command. */
 bool runtime_config_set_speed_kd_milli(int32_t value); /* Saves speed_kd_milli; used by the setkd command. */
 bool runtime_config_reset_speed_gains(void); /* Saves default speed_kp_milli and speed_kd_milli. */
 bool runtime_config_reset_defaults(void); /* Saves compile-time defaults back to NVS and RAM. */
 void runtime_config_print_all(void); /* Prints every runtime config value as CONFIG lines. */
+
+const char *runtime_config_wifi_ssid(void);
+const char *runtime_config_wifi_pass(void);
+const char *runtime_config_mqtt_broker_uri(void);
+const char *runtime_config_mqtt_topic_cmd(void);
+const char *runtime_config_mqtt_topic_emergency(void);
+const char *runtime_config_mqtt_topic_feedback(void);
+const char *runtime_config_mqtt_topic_all_emergency(void);
+const char *runtime_config_mqtt_topic_tray(void);
 
 #endif

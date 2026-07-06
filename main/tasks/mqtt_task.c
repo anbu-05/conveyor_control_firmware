@@ -26,13 +26,27 @@ bool mqtt_task_is_connected(void)
     return mqtt_connected;
 }
 
+void mqtt_task_refresh_subscription(const char *old_topic, const char *new_topic)
+{
+    if (!mqtt_connected || mqtt_client == NULL || old_topic == NULL || new_topic == NULL) {
+        return;
+    }
+
+    if (strcmp(old_topic, new_topic) == 0) {
+        return;
+    }
+
+    esp_mqtt_client_unsubscribe(mqtt_client, old_topic);
+    esp_mqtt_client_subscribe(mqtt_client, new_topic, 0);
+}
+
 static void publish_text(const char *text)
 {
     if (!mqtt_connected || mqtt_client == NULL || text == NULL) {
         return;
     }
 
-    esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_FEEDBACK, text, 0, 0, 0);
+    esp_mqtt_client_publish(mqtt_client, runtime_config_mqtt_topic_feedback(), text, 0, 0, 0);
 }
 
 static void publish_tray_status(bool force)
@@ -58,7 +72,7 @@ static void publish_tray_status(bool force)
              status.s0,
              status.s1);
 
-    esp_mqtt_client_publish(mqtt_client, CONVEYOR_MQTT_TOPIC_TRAY, message, 0, 0, 0);
+    esp_mqtt_client_publish(mqtt_client, runtime_config_mqtt_topic_tray(), message, 0, 0, 0);
     tray_status_published = true;
     last_has_tray = status.has_tray;
 }
@@ -224,9 +238,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     if (event_id == MQTT_EVENT_CONNECTED) {
         mqtt_connected = true;
-        esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_CMD, 0);
-        esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_EMERGENCY, 0);
-        esp_mqtt_client_subscribe(mqtt_client, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY, 0);
+        esp_mqtt_client_subscribe(mqtt_client, runtime_config_mqtt_topic_cmd(), 0);
+        esp_mqtt_client_subscribe(mqtt_client, runtime_config_mqtt_topic_emergency(), 0);
+        esp_mqtt_client_subscribe(mqtt_client, runtime_config_mqtt_topic_all_emergency(), 0);
         publish_tray_status(true);
         ESP_LOGI(TAG, "MQTT connected");
         return;
@@ -258,13 +272,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     memcpy(message, event->data, message_len);
     message[message_len] = '\0';
 
-    if (strcmp(topic, CONVEYOR_MQTT_TOPIC_CMD) == 0) {
+    if (strcmp(topic, runtime_config_mqtt_topic_cmd()) == 0) {
         handle_command_message(message);
         return;
     }
 
-    if (strcmp(topic, CONVEYOR_MQTT_TOPIC_EMERGENCY) == 0 ||
-        strcmp(topic, CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY) == 0) {
+    if (strcmp(topic, runtime_config_mqtt_topic_emergency()) == 0 ||
+        strcmp(topic, runtime_config_mqtt_topic_all_emergency()) == 0) {
         handle_emergency_message(message);
     }
 }
@@ -283,8 +297,8 @@ static void wifi_init(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL, NULL));
 
-    snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", CONVEYOR_WIFI_SSID);
-    snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", CONVEYOR_WIFI_PASS);
+    snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", runtime_config_wifi_ssid());
+    snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", runtime_config_wifi_pass());
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
@@ -294,7 +308,7 @@ static void wifi_init(void)
 static void mqtt_init(void)
 {
     esp_mqtt_client_config_t config = {
-        .broker.address.uri = CONVEYOR_MQTT_BROKER_URI,
+        .broker.address.uri = runtime_config_mqtt_broker_uri(),
         .credentials.client_id = "conveyor_" CONVEYOR_ID,
     };
 

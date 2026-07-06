@@ -23,9 +23,10 @@ If `CONVEYOR_MQTT_STATUS_ENABLED` is `0`, MQTT can still receive commands.
 Periodic job-status publishing is skipped, but `mqtt_status_task` is still
 created so tray-presence changes can be published.
 
-## Hardcoded MQTT Config
+## Runtime MQTT Config
 
-These values are intentionally hardcoded in `main/config/config.h`:
+These values have compile-time defaults in `main/config/config.h` and active
+runtime values loaded from NVS:
 
 ```text
 CONVEYOR_WIFI_SSID
@@ -37,6 +38,33 @@ CONVEYOR_MQTT_TOPIC_FEEDBACK
 CONVEYOR_MQTT_TOPIC_ALL_EMERGENCY
 CONVEYOR_MQTT_TOPIC_TRAY
 ```
+
+Runtime keys:
+
+```text
+wifi_ssid
+wifi_pass
+mqtt_broker_uri
+mqtt_topic_cmd
+mqtt_topic_emergency
+mqtt_topic_feedback
+mqtt_topic_all_emergency
+mqtt_topic_tray
+```
+
+They can be changed over serial:
+
+```text
+setconfig wifi_ssid thrd_warehouse
+setconfig wifi_pass thrd@789
+setconfig mqtt_broker_uri mqtt://192.168.1.126
+setconfig mqtt_topic_cmd conveyor/C0/cmd
+```
+
+WiFi SSID, WiFi password, and broker URI are used when WiFi/MQTT initializes,
+so saved changes take effect on the next firmware restart or MQTT/WiFi
+initialization. MQTT publish topics read the runtime values directly. Command
+and emergency topic changes refresh active subscriptions when MQTT is connected.
 
 The MQTT client ID is built from the conveyor ID:
 
@@ -87,7 +115,7 @@ mqtt_init()
 `mqtt_init()`:
 
 - Creates the ESP MQTT client.
-- Uses `CONVEYOR_MQTT_BROKER_URI`.
+- Uses `mqtt_broker_uri` from runtime config.
 - Uses client ID `conveyor_` plus `CONVEYOR_ID`.
 - Registers `mqtt_event_handler()`.
 - Starts the MQTT client.
@@ -298,9 +326,9 @@ state-machine errors like `TX_DETECT_TIMEOUT` or `RX_DONE_TIMEOUT`.
 
 ## Current Limits
 
-- MQTT topics are compile-time constants.
-- WiFi credentials are compile-time constants.
-- Broker URI is a compile-time constant.
+- MQTT topics have compile-time defaults but are runtime-configurable through serial.
+- WiFi credentials have compile-time defaults but are runtime-configurable through serial.
+- Broker URI has a compile-time default but is runtime-configurable through serial.
 - Payload parsing is exact string matching.
 - MQTT does not expose raw `setmotor`, `stopmotor`, or runtime config commands.
 - MQTT does not change `run_pwm`, `run_speed_counts_per_sec`, `speed_kp`, `speed_kd`, or timeout settings.
