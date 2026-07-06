@@ -318,7 +318,8 @@ clearerror
 - `getconfig`: prints all editable runtime config values.
 - `getconfig run_pwm`: prints one editable runtime config value.
 - `setconfig run_pwm 140`: validates, saves, and applies a runtime config value.
-- `resetconfig`: restores editable runtime config values to defaults.
+- `setconfig wifi_ssid thrd_warehouse`: validates, saves, and applies a runtime WiFi/MQTT string value.
+- `resetconfig`: restores editable runtime config values, including WiFi/MQTT strings, to defaults.
 - `jobtx`: submits a transmitter job to the conveyor state machine.
 - `jobrx`: submits a receiver job to the conveyor state machine.
 - `estop`: stops the active conveyor job and motor immediately.
@@ -356,6 +357,11 @@ MQTT defaults:
 - Shared emergency topic: `conveyor/all/emergency`
 - Feedback topic: `conveyor/C0/feedback`
 - Tray topic: `conveyor/C0/tray`
+
+WiFi SSID, WiFi password, MQTT broker URI, and MQTT topics are runtime-editable
+through serial `setconfig` keys. WiFi and broker changes are used on next
+WiFi/MQTT initialization; MQTT topic changes update runtime publish paths, and
+command/emergency topic changes refresh active subscriptions when connected.
 
 ## Architecture
 

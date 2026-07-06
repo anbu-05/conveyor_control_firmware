@@ -10,6 +10,7 @@
 #include "conveyor_job.h"
 #include "esp_err.h"
 #include "microrl.h"
+#include "mqtt_task.h"
 #include "runtime_config.h"
 
 static void send_job_command(conveyor_cmd_t command, const char *ok_text)
@@ -136,6 +137,7 @@ static bool parse_gain_milli(const char *text, const char *config_name, int32_t 
 static void print_one_config(const char *name)
 {
     int32_t value = 0;
+    const char *string_value = NULL;
 
     if (strcmp(name, "speed_kp") == 0) {
         value = runtime_config_speed_kp_milli();
@@ -150,7 +152,12 @@ static void print_one_config(const char *name)
     }
 
     if (!runtime_config_get_value(name, &value)) {
-        console_print("ERR UNKNOWN_CONFIG\r\n");
+        if (!runtime_config_get_string(name, &string_value)) {
+            console_print("ERR UNKNOWN_CONFIG\r\n");
+            return;
+        }
+
+        console_printf("CONFIG %s %s\r\n", name, string_value);
         return;
     }
 
@@ -636,6 +643,8 @@ static int execute_command(int argc, const char *const *argv)
     if (strcmp(argv[0], "setconfig") == 0) {
         int32_t old_value = 0;
         int32_t new_value = 0;
+        const char *old_string = NULL;
+        char old_string_copy[128];
 
         if (argc != 3) {
             console_print("ERR BAD_ARGS\r\n");
@@ -643,7 +652,34 @@ static int execute_command(int argc, const char *const *argv)
         }
 
         if (!runtime_config_get_value(argv[1], &old_value)) {
-            console_print("ERR UNKNOWN_CONFIG\r\n");
+            if (!runtime_config_get_string(argv[1], &old_string)) {
+                console_print("ERR UNKNOWN_CONFIG\r\n");
+                return 0;
+            }
+            snprintf(old_string_copy, sizeof(old_string_copy), "%s", old_string);
+
+            if (!runtime_config_string_is_valid(argv[1], argv[2])) {
+                console_print("ERR BAD_VALUE\r\n");
+                return 0;
+            }
+
+            if (!conveyor_job_is_idle()) {
+                console_print("ERR CONFIG_BUSY\r\n");
+                return 0;
+            }
+
+            if (!runtime_config_set_string(argv[1], argv[2])) {
+                console_print("ERR CONFIG_SAVE\r\n");
+                return 0;
+            }
+
+            if (strcmp(argv[1], "mqtt_topic_cmd") == 0 ||
+                strcmp(argv[1], "mqtt_topic_emergency") == 0 ||
+                strcmp(argv[1], "mqtt_topic_all_emergency") == 0) {
+                mqtt_task_refresh_subscription(old_string_copy, argv[2]);
+            }
+
+            console_printf("OK SETCONFIG %s %s\r\n", argv[1], argv[2]);
             return 0;
         }
 
