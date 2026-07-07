@@ -14,6 +14,7 @@ const CONFIG_LIMITS = {
 const STRING_CONFIG_LIMITS = {
   wifi_ssid: [1, 31],
   wifi_pass: [1, 63],
+  conveyor_id: [1, 31],
   mqtt_broker_uri: [1, 127],
   mqtt_topic_cmd: [1, 95],
   mqtt_topic_emergency: [1, 95],
@@ -28,6 +29,7 @@ const state = {
   logLines: [],
   serialLogLines: [],
   lastSerialConfig: {},
+  renderedConveyorIds: "",
   socket: null,
 };
 
@@ -397,31 +399,14 @@ function renderSnapshot(snapshot) {
 function renderConveyorCards(snapshot) {
   const conveyorIds = snapshot.conveyor_ids || Object.keys(snapshot.conveyors || {});
   const conveyors = snapshot.conveyors || {};
-  const active = document.activeElement;
-  const activeCard = active?.closest?.("[data-conveyor-id]");
-  const activeState = activeCard && active.dataset.role
-    ? {
-        conveyorId: activeCard.dataset.conveyorId,
-        role: active.dataset.role,
-        value: active.value,
-        selectionStart: active.selectionStart,
-        selectionEnd: active.selectionEnd,
-      }
-    : null;
+  const conveyorSignature = conveyorIds.join("\u001f");
 
-  el.conveyorCards.innerHTML = conveyorIds.map((conveyorId) => conveyorCardHtml(conveyorId, conveyors[conveyorId] || {})).join("");
-
-  if (activeState) {
-    const selector = `[data-conveyor-id='${cssEscape(activeState.conveyorId)}'] [data-role='${cssEscape(activeState.role)}']`;
-    const restored = el.conveyorCards.querySelector(selector);
-    if (restored) {
-      restored.value = activeState.value;
-      restored.focus();
-      if (typeof restored.setSelectionRange === "function" && activeState.selectionStart !== null && activeState.selectionEnd !== null) {
-        restored.setSelectionRange(activeState.selectionStart, activeState.selectionEnd);
-      }
-    }
+  if (state.renderedConveyorIds !== conveyorSignature) {
+    el.conveyorCards.innerHTML = conveyorIds.map((conveyorId) => conveyorCardHtml(conveyorId, conveyors[conveyorId] || {})).join("");
+    state.renderedConveyorIds = conveyorSignature;
   }
+
+  conveyorIds.forEach((conveyorId) => updateConveyorCard(conveyorId, conveyors[conveyorId] || {}));
 }
 
 function conveyorCardHtml(conveyorId, conveyor) {
@@ -430,22 +415,22 @@ function conveyorCardHtml(conveyorId, conveyor) {
     <section class="card conveyor-card" data-conveyor-id="${escapeHtml(conveyorId)}">
       <div class="conveyor-card-header">
         <h2>${escapeHtml(conveyorId)}</h2>
-        <span class="pill ${hasError ? "bad" : "muted"}">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
+        <span class="pill ${hasError ? "bad" : "muted"}" data-field="statePill">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
       </div>
-      <div class="state-card ${hasError ? "error" : ""}">
+      <div class="state-card ${hasError ? "error" : ""}" data-field="stateCard">
         <div class="state-body">
-          <span class="state-big">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
-          <span class="state-elapsed">${conveyor.state_elapsed_ms == null ? "- ms" : `${conveyor.state_elapsed_ms} ms`}</span>
+          <span class="state-big" data-field="state">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
+          <span class="state-elapsed" data-field="elapsed">${conveyor.state_elapsed_ms == null ? "- ms" : `${conveyor.state_elapsed_ms} ms`}</span>
         </div>
-        <div class="error-line">${escapeHtml(conveyor.error || "No active error")}</div>
+        <div class="error-line" data-field="error">${escapeHtml(conveyor.error || "No active error")}</div>
       </div>
       <div class="metrics-row conveyor-metrics">
-        <div class="metric"><span class="metric-label">Tray</span><strong>${trayText(conveyor.has_tray)}</strong></div>
-        <div class="metric"><span class="metric-label">S0</span><strong>${sensorText(conveyor.s0)}</strong></div>
-        <div class="metric"><span class="metric-label">S1</span><strong>${sensorText(conveyor.s1)}</strong></div>
-        <div class="metric"><span class="metric-label">Direction</span><strong>${escapeHtml(conveyor.direction || "UNKNOWN")}</strong></div>
-        <div class="metric"><span class="metric-label">RSSI</span><strong>${conveyor.rssi == null ? "-" : `${conveyor.rssi} dBm`}</strong></div>
-        <div class="metric"><span class="metric-label">KP / KD</span><strong>${escapeHtml(conveyor.speed_kp || "-")} / ${escapeHtml(conveyor.speed_kd || "-")}</strong></div>
+        <div class="metric"><span class="metric-label">Tray</span><strong data-field="tray">${trayText(conveyor.has_tray)}</strong></div>
+        <div class="metric"><span class="metric-label">S0</span><strong data-field="s0">${sensorText(conveyor.s0)}</strong></div>
+        <div class="metric"><span class="metric-label">S1</span><strong data-field="s1">${sensorText(conveyor.s1)}</strong></div>
+        <div class="metric"><span class="metric-label">Direction</span><strong data-field="directionText">${escapeHtml(conveyor.direction || "UNKNOWN")}</strong></div>
+        <div class="metric"><span class="metric-label">RSSI</span><strong data-field="rssi">${conveyor.rssi == null ? "-" : `${conveyor.rssi} dBm`}</strong></div>
+        <div class="metric"><span class="metric-label">KP / KD</span><strong data-field="gains">${escapeHtml(conveyor.speed_kp || "-")} / ${escapeHtml(conveyor.speed_kd || "-")}</strong></div>
       </div>
       <div class="cmd-grid conveyor-command-grid">
         <button class="command btn-cmd" data-command="tx">TX</button>
@@ -458,8 +443,8 @@ function conveyorCardHtml(conveyorId, conveyor) {
       <div class="tune-row">
         <label class="tune-label">Direction</label>
         <select data-role="direction">
-          <option value="s0tos1">S0 to S1</option>
-          <option value="s1tos0">S1 to S0</option>
+          <option value="s0tos1" ${conveyor.direction === "s0tos1" ? "selected" : ""}>S0 to S1</option>
+          <option value="s1tos0" ${conveyor.direction === "s1tos0" ? "selected" : ""}>S1 to S0</option>
         </select>
         <button class="command btn-cmd" data-command="set_direction" type="button">Set</button>
       </div>
@@ -476,6 +461,55 @@ function conveyorCardHtml(conveyorId, conveyor) {
       <button class="command btn-ghost" data-command="reset_gains" type="button">Reset Gains</button>
     </section>
   `;
+}
+
+function updateConveyorCard(conveyorId, conveyor) {
+  const card = el.conveyorCards.querySelector(`[data-conveyor-id='${cssEscape(conveyorId)}']`);
+  if (!card) return;
+
+  const hasError = Boolean(conveyor.error) || conveyor.state === "ERROR" || conveyor.state === "ESTOP";
+  const stateText = conveyor.state || "UNKNOWN";
+  const statePill = card.querySelector("[data-field='statePill']");
+  const stateCard = card.querySelector("[data-field='stateCard']");
+  const directionSelect = card.querySelector("[data-role='direction']");
+  const kpInput = card.querySelector("[data-role='kp']");
+  const kdInput = card.querySelector("[data-role='kd']");
+
+  setText(card, "state", stateText);
+  setText(card, "elapsed", conveyor.state_elapsed_ms == null ? "- ms" : `${conveyor.state_elapsed_ms} ms`);
+  setText(card, "error", conveyor.error || "No active error");
+  setText(card, "tray", trayText(conveyor.has_tray));
+  setText(card, "s0", sensorText(conveyor.s0));
+  setText(card, "s1", sensorText(conveyor.s1));
+  setText(card, "directionText", conveyor.direction || "UNKNOWN");
+  setText(card, "rssi", conveyor.rssi == null ? "-" : `${conveyor.rssi} dBm`);
+  setText(card, "gains", `${conveyor.speed_kp || "-"} / ${conveyor.speed_kd || "-"}`);
+
+  if (statePill) {
+    statePill.textContent = stateText;
+    statePill.classList.toggle("bad", hasError);
+    statePill.classList.toggle("muted", !hasError);
+  }
+  if (stateCard) {
+    stateCard.classList.toggle("error", hasError);
+  }
+
+  if (directionSelect && document.activeElement !== directionSelect && ["s0tos1", "s1tos0"].includes(conveyor.direction)) {
+    directionSelect.value = conveyor.direction;
+  }
+  if (kpInput && document.activeElement !== kpInput && conveyor.speed_kp) {
+    kpInput.value = conveyor.speed_kp;
+  }
+  if (kdInput && document.activeElement !== kdInput && conveyor.speed_kd) {
+    kdInput.value = conveyor.speed_kd;
+  }
+}
+
+function setText(root, field, value) {
+  const node = root.querySelector(`[data-field='${field}']`);
+  if (node && node.textContent !== String(value)) {
+    node.textContent = value;
+  }
 }
 
 function renderSerialSnapshot(snapshot) {

@@ -31,6 +31,7 @@ runtime values loaded from NVS:
 ```text
 CONVEYOR_WIFI_SSID
 CONVEYOR_WIFI_PASS
+CONVEYOR_ID
 CONVEYOR_MQTT_BROKER_URI
 CONVEYOR_MQTT_TOPIC_CMD
 CONVEYOR_MQTT_TOPIC_EMERGENCY
@@ -44,6 +45,7 @@ Runtime keys:
 ```text
 wifi_ssid
 wifi_pass
+conveyor_id
 mqtt_broker_uri
 mqtt_topic_cmd
 mqtt_topic_emergency
@@ -57,14 +59,18 @@ They can be changed over serial:
 ```text
 setconfig wifi_ssid thrd_warehouse
 setconfig wifi_pass thrd@789
+setconfig conveyor_id C1
 setconfig mqtt_broker_uri mqtt://192.168.1.126
 setconfig mqtt_topic_cmd conveyor/C0/cmd
 ```
 
-WiFi SSID, WiFi password, and broker URI are used when WiFi/MQTT initializes,
-so saved changes take effect on the next firmware restart or MQTT/WiFi
-initialization. MQTT publish topics read the runtime values directly. Command
-and emergency topic changes refresh active subscriptions when MQTT is connected.
+WiFi SSID, WiFi password, broker URI, and MQTT client ID are used when WiFi/MQTT
+initializes, so saved changes take effect on the next firmware restart or
+MQTT/WiFi initialization. Status payload IDs and MQTT publish topics read the
+runtime values directly. Command and emergency topic changes refresh active
+subscriptions when MQTT is connected. `conveyor_id` does not rewrite MQTT topic
+strings; update the `mqtt_topic_*` keys separately when topic names should also
+change.
 
 The MQTT client ID is built from the conveyor ID:
 

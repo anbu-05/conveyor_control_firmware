@@ -188,6 +188,7 @@ rx_done_timeout_ms
 mqtt_status_period_ms
 wifi_ssid
 wifi_pass
+conveyor_id
 mqtt_broker_uri
 mqtt_topic_cmd
 mqtt_topic_emergency
@@ -206,13 +207,16 @@ Examples:
 ```text
 setconfig wifi_ssid thrd_warehouse
 setconfig wifi_pass thrd@789
+setconfig conveyor_id C1
 setconfig mqtt_broker_uri mqtt://192.168.1.126
 setconfig mqtt_topic_cmd conveyor/C0/cmd
 ```
 
-WiFi credentials and broker URI are applied on next WiFi/MQTT initialization.
-MQTT publish topics use updated runtime values immediately, and command or
-emergency topic changes refresh active subscriptions when MQTT is connected.
+WiFi credentials, broker URI, and MQTT client ID are applied on next WiFi/MQTT
+initialization. Status payload IDs and MQTT publish topics use updated runtime
+values immediately, and command or emergency topic changes refresh active
+subscriptions when MQTT is connected. `conveyor_id` does not rewrite MQTT topic
+strings; edit the `mqtt_topic_*` keys separately when topics should change too.
 
 ## Detailed Docs
 

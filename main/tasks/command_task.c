@@ -435,7 +435,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        console_printf("DIRECTION %s %s\r\n", CONVEYOR_ID, conveyor_travel_direction_name(conveyor_get_travel_direction()));
+        console_printf("DIRECTION %s %s\r\n", runtime_config_conveyor_id(), conveyor_travel_direction_name(conveyor_get_travel_direction()));
         return 0;
     }
 
@@ -453,7 +453,7 @@ static int execute_command(int argc, const char *const *argv)
             return 0;
         }
 
-        console_printf("RSSI %s %d\r\n", CONVEYOR_ID, rssi);
+        console_printf("RSSI %s %d\r\n", runtime_config_conveyor_id(), rssi);
         return 0;
     }
 
@@ -618,7 +618,7 @@ static int execute_command(int argc, const char *const *argv)
 
         conveyor_job_get_tray_status(&tray_status);
         console_printf("TRAY %s %d %d %d\r\n",
-                       CONVEYOR_ID,
+                       runtime_config_conveyor_id(),
                        tray_status.has_tray ? 1 : 0,
                        tray_status.s0,
                        tray_status.s1);

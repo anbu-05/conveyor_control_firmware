@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -104,43 +105,50 @@ class ConveyorMqttBackend:
             conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in DEFAULT_CONVEYOR_IDS
         }
         self._client: mqtt.Client | None = None
+        self._lock = threading.RLock()
 
     def snapshot_dict(self) -> dict[str, Any]:
-        data = asdict(self.snapshot)
-        data["topics"] = {conveyor_id: topics.as_dict() for conveyor_id, topics in self.topics.items()}
+        with self._lock:
+            data = asdict(self.snapshot)
+            data["topics"] = {conveyor_id: topics.as_dict() for conveyor_id, topics in self.topics.items()}
         return data
 
     def connect(self, host: str, port: int, conveyor_ids: list[str]) -> None:
         self.disconnect(emit=False)
         conveyor_ids = self._normalize_conveyor_ids(conveyor_ids)
-        self.topics = {conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
-        self.snapshot.mqtt_host = host
-        self.snapshot.mqtt_port = port
-        self.snapshot.conveyor_ids = conveyor_ids
-        self.snapshot.conveyors = {conveyor_id: ConveyorRuntime(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
+        with self._lock:
+            self.topics = {conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
+            self.snapshot.mqtt_host = host
+            self.snapshot.mqtt_port = port
+            self.snapshot.conveyor_ids = conveyor_ids
+            self.snapshot.conveyors = {conveyor_id: ConveyorRuntime(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
 
         client_id = f"conveyor_web_{'_'.join(conveyor_ids)}_{int(time.time())}"
         client = self._make_client(client_id)
         client.on_connect = self._on_connect
         client.on_disconnect = self._on_disconnect
         client.on_message = self._on_message
-        self._client = client
+        with self._lock:
+            self._client = client
         client.connect_async(host, port, keepalive=30)
         client.loop_start()
         self._emit("log", f"Connecting to MQTT {host}:{port} as {client_id}")
 
     def disconnect(self, emit: bool = True) -> None:
         if self._client is None:
-            self.snapshot.connected = False
+            with self._lock:
+                self.snapshot.connected = False
             return
 
-        client = self._client
-        self._client = None
+        with self._lock:
+            client = self._client
+            self._client = None
         try:
             client.disconnect()
             client.loop_stop()
         finally:
-            self.snapshot.connected = False
+            with self._lock:
+                self.snapshot.connected = False
             if emit:
                 self._emit("status", "MQTT disconnected")
 
@@ -181,7 +189,8 @@ class ConveyorMqttBackend:
             return ConveyorTopics()
         if conveyor_id is None:
             raise ValueError("conveyor_id is required")
-        topics = self.topics.get(conveyor_id)
+        with self._lock:
+            topics = self.topics.get(conveyor_id)
         if topics is None:
             raise ValueError(f"unknown conveyor_id: {conveyor_id}")
         return topics
@@ -194,21 +203,29 @@ class ConveyorMqttBackend:
 
     def _on_connect(self, client: mqtt.Client, _userdata: Any, _flags: Any, rc: int) -> None:
         if rc != 0:
-            self.snapshot.connected = False
+            with self._lock:
+                self.snapshot.connected = False
             self._emit("error", f"MQTT connect failed with rc={rc}")
             return
 
-        self.snapshot.connected = True
-        for topics in self.topics.values():
+        with self._lock:
+            self.snapshot.connected = True
+            topics_list = list(self.topics.values())
+            conveyor_ids = list(self.snapshot.conveyor_ids)
+            mqtt_host = self.snapshot.mqtt_host
+            mqtt_port = self.snapshot.mqtt_port
+
+        for topics in topics_list:
             client.subscribe(topics.feedback, qos=0)
             client.subscribe(topics.tray, qos=0)
-        self._emit("status", f"MQTT connected to {self.snapshot.mqtt_host}:{self.snapshot.mqtt_port}")
-        for conveyor_id in self.snapshot.conveyor_ids:
+        self._emit("status", f"MQTT connected to {mqtt_host}:{mqtt_port}")
+        for conveyor_id in conveyor_ids:
             self.command("get_direction", conveyor_id=conveyor_id)
             self.command("get_rssi", conveyor_id=conveyor_id)
 
     def _on_disconnect(self, _client: mqtt.Client, _userdata: Any, rc: int) -> None:
-        self.snapshot.connected = False
+        with self._lock:
+            self.snapshot.connected = False
         if rc == 0:
             self._emit("status", "MQTT disconnected")
         else:
@@ -224,14 +241,15 @@ class ConveyorMqttBackend:
         except json.JSONDecodeError:
             data = None
 
-        conveyor_id = self._conveyor_id_for_topic(message.topic)
-        runtime = self.snapshot.conveyors.get(conveyor_id) if conveyor_id is not None else None
-        if runtime is not None:
-            runtime.last_topic = message.topic
-            runtime.last_payload = payload
-            runtime.last_update_monotonic = time.monotonic()
-        if data is not None:
-            self._update_snapshot(data, runtime)
+        with self._lock:
+            conveyor_id = self._conveyor_id_for_topic(message.topic)
+            runtime = self.snapshot.conveyors.get(conveyor_id) if conveyor_id is not None else None
+            if runtime is not None:
+                runtime.last_topic = message.topic
+                runtime.last_payload = payload
+                runtime.last_update_monotonic = time.monotonic()
+            if data is not None:
+                self._update_snapshot(data, runtime)
 
         self._emit("message", f"RX {message.topic} {payload}", message.topic, payload, data)
 
@@ -268,17 +286,22 @@ class ConveyorMqttBackend:
         self._publish(topics.command, self._compact_json(payload))
 
     def _conveyor_id_for_topic(self, topic: str) -> str | None:
+        # Caller must hold self._lock.
         for conveyor_id, topics in self.topics.items():
             if topic in {topics.feedback, topics.tray}:
                 return conveyor_id
         return None
 
     def _publish(self, topic: str, payload: str) -> None:
-        if self._client is None or not self.snapshot.connected:
+        with self._lock:
+            client = self._client
+            connected = self.snapshot.connected
+
+        if client is None or not connected:
             self._emit("error", "MQTT is not connected; command was not sent")
             raise RuntimeError("MQTT is not connected")
 
-        result = self._client.publish(topic, payload, qos=0, retain=False)
+        result = client.publish(topic, payload, qos=0, retain=False)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             self._emit("error", f"Publish failed rc={result.rc}: {topic} {payload}")
             raise RuntimeError(f"MQTT publish failed with rc={result.rc}")

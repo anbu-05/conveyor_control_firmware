@@ -34,6 +34,7 @@ CONFIG_LIMITS: dict[str, tuple[int, int]] = {
 STRING_CONFIG_LIMITS: dict[str, tuple[int, int]] = {
     "wifi_ssid": (1, 31),
     "wifi_pass": (1, 63),
+    "conveyor_id": (1, 31),
     "mqtt_broker_uri": (1, 127),
     "mqtt_topic_cmd": (1, 95),
     "mqtt_topic_emergency": (1, 95),

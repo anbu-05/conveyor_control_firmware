@@ -319,6 +319,7 @@ clearerror
 - `getconfig run_pwm`: prints one editable runtime config value.
 - `setconfig run_pwm 140`: validates, saves, and applies a runtime config value.
 - `setconfig wifi_ssid thrd_warehouse`: validates, saves, and applies a runtime WiFi/MQTT string value.
+- `setconfig conveyor_id C1`: validates, saves, and applies the runtime serial/MQTT status payload ID.
 - `resetconfig`: restores editable runtime config values, including WiFi/MQTT strings, to defaults.
 - `jobtx`: submits a transmitter job to the conveyor state machine.
 - `jobrx`: submits a receiver job to the conveyor state machine.
@@ -358,9 +359,10 @@ MQTT defaults:
 - Feedback topic: `conveyor/C0/feedback`
 - Tray topic: `conveyor/C0/tray`
 
-WiFi SSID, WiFi password, MQTT broker URI, and MQTT topics are runtime-editable
-through serial `setconfig` keys. WiFi and broker changes are used on next
-WiFi/MQTT initialization; MQTT topic changes update runtime publish paths, and
+WiFi SSID, WiFi password, conveyor ID, MQTT broker URI, and MQTT topics are
+runtime-editable through serial `setconfig` keys. WiFi, broker, and MQTT client
+ID changes are used on next WiFi/MQTT initialization; status payload ID changes
+apply immediately. MQTT topic changes update runtime publish paths, and
 command/emergency topic changes refresh active subscriptions when connected.
 
 ## Architecture

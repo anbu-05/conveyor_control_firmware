@@ -139,7 +139,7 @@ static void publish_status(void)
     current_status.direction = conveyor_get_travel_direction();
 
     console_printf("EVENT JOB %s %s\r\n",
-                   CONVEYOR_ID,
+                   runtime_config_conveyor_id(),
                    conveyor_state_name(current_status.state));
     mqtt_publish_job_status(&current_status);
 }

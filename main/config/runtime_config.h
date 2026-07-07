@@ -31,6 +31,7 @@ void runtime_config_print_all(void); /* Prints every runtime config value as CON
 
 const char *runtime_config_wifi_ssid(void);
 const char *runtime_config_wifi_pass(void);
+const char *runtime_config_conveyor_id(void);
 const char *runtime_config_mqtt_broker_uri(void);
 const char *runtime_config_mqtt_topic_cmd(void);
 const char *runtime_config_mqtt_topic_emergency(void);

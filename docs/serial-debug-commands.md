@@ -480,6 +480,7 @@ CONFIG rx_done_timeout_ms 5000
 CONFIG mqtt_status_period_ms 100
 CONFIG wifi_ssid thrd_warehouse
 CONFIG wifi_pass thrd@789
+CONFIG conveyor_id C0
 CONFIG mqtt_broker_uri mqtt://192.168.1.126
 CONFIG mqtt_topic_cmd conveyor/C0/cmd
 CONFIG mqtt_topic_emergency conveyor/C0/emergency
@@ -528,6 +529,7 @@ Effect:
 - Updates the RAM value used by later jobs.
 - MQTT publish topics use updated RAM values immediately.
 - MQTT command and emergency topic changes refresh active subscriptions when MQTT is connected.
+- Conveyor ID changes update serial/MQTT status payload IDs immediately; the MQTT client ID uses the saved value on next MQTT initialization.
 - WiFi SSID, WiFi password, and MQTT broker URI changes are saved and used on next MQTT/WiFi initialization.
 
 Success output:
@@ -561,6 +563,7 @@ rx_done_timeout_ms       1..600000
 mqtt_status_period_ms    100..60000
 wifi_ssid                1..31 chars
 wifi_pass                1..63 chars
+conveyor_id              1..31 chars
 mqtt_broker_uri          1..127 chars
 mqtt_topic_cmd           1..95 chars
 mqtt_topic_emergency     1..95 chars
@@ -576,6 +579,7 @@ Examples:
 ```text
 setconfig wifi_ssid thrd_warehouse
 setconfig wifi_pass thrd@789
+setconfig conveyor_id C1
 setconfig mqtt_broker_uri mqtt://192.168.1.126
 setconfig mqtt_topic_cmd conveyor/C0/cmd
 ```

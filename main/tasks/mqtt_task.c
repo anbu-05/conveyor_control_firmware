@@ -62,7 +62,7 @@ static void publish_direction(void)
     snprintf(message,
              sizeof(message),
              "{\"id\":\"%s\",\"direction\":\"%s\"}",
-             CONVEYOR_ID,
+             runtime_config_conveyor_id(),
              conveyor_travel_direction_name(direction));
     publish_text(message);
 }
@@ -77,7 +77,7 @@ static void publish_rssi(void)
         return;
     }
 
-    snprintf(message, sizeof(message), "{\"id\":\"%s\",\"rssi\":%d}", CONVEYOR_ID, rssi);
+    snprintf(message, sizeof(message), "{\"id\":\"%s\",\"rssi\":%d}", runtime_config_conveyor_id(), rssi);
     publish_text(message);
 }
 
@@ -99,7 +99,7 @@ static void publish_tray_status(bool force)
     snprintf(message,
              sizeof(message),
              "{\"id\":\"%s\",\"has_tray\":%s,\"s0\":%d,\"s1\":%d}",
-             CONVEYOR_ID,
+             runtime_config_conveyor_id(),
              status.has_tray ? "true" : "false",
              status.s0,
              status.s1);
@@ -121,7 +121,7 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
         snprintf(message,
                  sizeof(message),
                  "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
-                 CONVEYOR_ID,
+                 runtime_config_conveyor_id(),
                  conveyor_state_name(status->state),
                  (unsigned long)status->state_elapsed_ms,
                  status->error,
@@ -132,7 +132,7 @@ void mqtt_publish_job_status(const conveyor_status_t *status)
         snprintf(message,
                  sizeof(message),
                  "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
-                 CONVEYOR_ID,
+                 runtime_config_conveyor_id(),
                  conveyor_state_name(status->state),
                  (unsigned long)status->state_elapsed_ms,
                  status->s0,
@@ -152,7 +152,7 @@ static void publish_bad_command(const char *error)
     snprintf(message,
              sizeof(message),
              "{\"id\":\"%s\",\"state\":\"%s\",\"state_elapsed_ms\":%lu,\"error\":\"%s\",\"s0\":%d,\"s1\":%d,\"direction\":\"%s\"}",
-             CONVEYOR_ID,
+             runtime_config_conveyor_id(),
              conveyor_state_name(status.state),
              (unsigned long)status.state_elapsed_ms,
              error,
@@ -257,7 +257,7 @@ static void publish_gain_config(const char *name, int32_t value)
     snprintf(message,
              sizeof(message),
              "{\"id\":\"%s\",\"config\":\"%s\",\"value\":\"%ld.%03ld\"}",
-             CONVEYOR_ID,
+             runtime_config_conveyor_id(),
              name,
              (long)(value / 1000),
              (long)(value % 1000));
@@ -273,7 +273,7 @@ static void publish_all_gain_config(void)
     snprintf(message,
              sizeof(message),
              "{\"id\":\"%s\",\"config\":\"speed_gains\",\"speed_kp\":\"%ld.%03ld\",\"speed_kd\":\"%ld.%03ld\"}",
-             CONVEYOR_ID,
+             runtime_config_conveyor_id(),
              (long)(kp_milli / 1000),
              (long)(kp_milli % 1000),
              (long)(kd_milli / 1000),
@@ -525,9 +525,13 @@ static void wifi_init(void)
 
 static void mqtt_init(void)
 {
+    static char client_id[64];
+
+    snprintf(client_id, sizeof(client_id), "conveyor_%s", runtime_config_conveyor_id());
+
     esp_mqtt_client_config_t config = {
         .broker.address.uri = runtime_config_mqtt_broker_uri(),
-        .credentials.client_id = "conveyor_" CONVEYOR_ID,
+        .credentials.client_id = client_id,
     };
 
     mqtt_client = esp_mqtt_client_init(&config);

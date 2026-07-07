@@ -193,12 +193,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 async def _event_pump() -> None:
     while True:
-        while not backend.events.empty():
-            event = backend.events.get()
+        mqtt_event = None
+        mqtt_event_count = 0
+        while mqtt_event_count < 1000 and not backend.events.empty():
+            mqtt_event = backend.events.get()
+            mqtt_event_count += 1
+
+        if mqtt_event is not None:
             await manager.broadcast(
                 {
                     "type": "event",
-                    "event": event.as_dict(),
+                    "event": mqtt_event.as_dict(),
                     "snapshot": backend.snapshot_dict(),
                 }
             )

@@ -12,6 +12,7 @@
 #define RUNTIME_CONFIG_NAMESPACE "conveyor_cfg" /* NVS namespace for saved runtime config values. */
 #define RUNTIME_CONFIG_WIFI_SSID_MAX 32
 #define RUNTIME_CONFIG_WIFI_PASS_MAX 64
+#define RUNTIME_CONFIG_CONVEYOR_ID_MAX 32
 #define RUNTIME_CONFIG_MQTT_URI_MAX 128
 #define RUNTIME_CONFIG_MQTT_TOPIC_MAX 96
 
@@ -28,6 +29,7 @@ typedef struct {
     int32_t mqtt_status_period_ms;      /* Period between MQTT status publishes. */
     char wifi_ssid[RUNTIME_CONFIG_WIFI_SSID_MAX];
     char wifi_pass[RUNTIME_CONFIG_WIFI_PASS_MAX];
+    char conveyor_id[RUNTIME_CONFIG_CONVEYOR_ID_MAX];
     char mqtt_broker_uri[RUNTIME_CONFIG_MQTT_URI_MAX];
     char mqtt_topic_cmd[RUNTIME_CONFIG_MQTT_TOPIC_MAX];
     char mqtt_topic_emergency[RUNTIME_CONFIG_MQTT_TOPIC_MAX];
@@ -55,6 +57,7 @@ static const runtime_config_t default_config = {
     .mqtt_status_period_ms = CONVEYOR_MQTT_STATUS_PERIOD_MS,
     .wifi_ssid = CONVEYOR_WIFI_SSID,
     .wifi_pass = CONVEYOR_WIFI_PASS,
+    .conveyor_id = CONVEYOR_ID,
     .mqtt_broker_uri = CONVEYOR_MQTT_BROKER_URI,
     .mqtt_topic_cmd = CONVEYOR_MQTT_TOPIC_CMD,
     .mqtt_topic_emergency = CONVEYOR_MQTT_TOPIC_EMERGENCY,
@@ -106,6 +109,9 @@ static size_t string_value_max_len(const char *name)
     }
     if (strcmp(name, "wifi_pass") == 0) {
         return RUNTIME_CONFIG_WIFI_PASS_MAX;
+    }
+    if (strcmp(name, "conveyor_id") == 0) {
+        return RUNTIME_CONFIG_CONVEYOR_ID_MAX;
     }
     if (strcmp(name, "mqtt_broker_uri") == 0) {
         return RUNTIME_CONFIG_MQTT_URI_MAX;
@@ -182,6 +188,9 @@ static const char *string_storage_key(const char *name)
     }
     if (strcmp(name, "wifi_pass") == 0) {
         return "wifi_pass";
+    }
+    if (strcmp(name, "conveyor_id") == 0) {
+        return "conveyor_id";
     }
     if (strcmp(name, "mqtt_broker_uri") == 0) {
         return "mqtt_broker";
@@ -279,6 +288,10 @@ static bool set_ram_string(const char *name, const char *value)
         snprintf(runtime_config.wifi_pass, sizeof(runtime_config.wifi_pass), "%s", value);
         return true;
     }
+    if (strcmp(name, "conveyor_id") == 0) {
+        snprintf(runtime_config.conveyor_id, sizeof(runtime_config.conveyor_id), "%s", value);
+        return true;
+    }
     if (strcmp(name, "mqtt_broker_uri") == 0) {
         snprintf(runtime_config.mqtt_broker_uri, sizeof(runtime_config.mqtt_broker_uri), "%s", value);
         return true;
@@ -369,6 +382,10 @@ bool runtime_config_get_string(const char *name, const char **value)
     }
     if (strcmp(name, "wifi_pass") == 0) {
         *value = runtime_config.wifi_pass;
+        return true;
+    }
+    if (strcmp(name, "conveyor_id") == 0) {
+        *value = runtime_config.conveyor_id;
         return true;
     }
     if (strcmp(name, "mqtt_broker_uri") == 0) {
@@ -518,6 +535,9 @@ static bool save_all_defaults(void)
         err = nvs_set_str(handle, string_storage_key("wifi_pass"), default_config.wifi_pass);
     }
     if (err == ESP_OK) {
+        err = nvs_set_str(handle, string_storage_key("conveyor_id"), default_config.conveyor_id);
+    }
+    if (err == ESP_OK) {
         err = nvs_set_str(handle, string_storage_key("mqtt_broker_uri"), default_config.mqtt_broker_uri);
     }
     if (err == ESP_OK) {
@@ -577,6 +597,8 @@ static void load_one_string(nvs_handle_t handle, const char *name)
         length = RUNTIME_CONFIG_WIFI_SSID_MAX;
     } else if (strcmp(name, "wifi_pass") == 0) {
         length = RUNTIME_CONFIG_WIFI_PASS_MAX;
+    } else if (strcmp(name, "conveyor_id") == 0) {
+        length = RUNTIME_CONFIG_CONVEYOR_ID_MAX;
     } else if (strcmp(name, "mqtt_broker_uri") == 0) {
         length = RUNTIME_CONFIG_MQTT_URI_MAX;
     } else {
@@ -608,6 +630,7 @@ static void load_saved_values(void)
     load_one_value(handle, "mqtt_status_period_ms");
     load_one_string(handle, "wifi_ssid");
     load_one_string(handle, "wifi_pass");
+    load_one_string(handle, "conveyor_id");
     load_one_string(handle, "mqtt_broker_uri");
     load_one_string(handle, "mqtt_topic_cmd");
     load_one_string(handle, "mqtt_topic_emergency");
@@ -653,6 +676,7 @@ void runtime_config_print_all(void)
     console_printf("CONFIG mqtt_status_period_ms %ld\r\n", (long)runtime_config.mqtt_status_period_ms);
     console_printf("CONFIG wifi_ssid %s\r\n", runtime_config.wifi_ssid);
     console_printf("CONFIG wifi_pass %s\r\n", runtime_config.wifi_pass);
+    console_printf("CONFIG conveyor_id %s\r\n", runtime_config.conveyor_id);
     console_printf("CONFIG mqtt_broker_uri %s\r\n", runtime_config.mqtt_broker_uri);
     console_printf("CONFIG mqtt_topic_cmd %s\r\n", runtime_config.mqtt_topic_cmd);
     console_printf("CONFIG mqtt_topic_emergency %s\r\n", runtime_config.mqtt_topic_emergency);
@@ -742,6 +766,11 @@ const char *runtime_config_wifi_ssid(void)
 const char *runtime_config_wifi_pass(void)
 {
     return runtime_config.wifi_pass;
+}
+
+const char *runtime_config_conveyor_id(void)
+{
+    return runtime_config.conveyor_id;
 }
 
 const char *runtime_config_mqtt_broker_uri(void)
