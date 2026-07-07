@@ -15,7 +15,7 @@
       <header class="topbar">
         <div class="topbar-left">
           <span class="eyebrow">Control</span>
-          <h1>Conveyor C0</h1>
+          <h1>Conveyors</h1>
         </div>
         <div class="topbar-right">
           <span id="wsStatus" class="pill">WS disconnected</span>
@@ -30,116 +30,36 @@
       </nav>
 
       <main id="mqttPanel" class="tab-panel active">
-        <div class="main-grid">
-
-          <!-- left column -->
-          <div class="col-left">
-
-            <section class="card">
-              <h2>Connection</h2>
-              <form id="connectForm">
-                <div class="field-row">
-                  <label class="field">
-                    <span>MQTT Host</span>
-                    <input id="mqttHost" name="mqttHost" autocomplete="off" placeholder="192.168.1.126" />
-                  </label>
-                  <label class="field field-sm">
-                    <span>Port</span>
-                    <input id="mqttPort" name="mqttPort" type="number" min="1" max="65535" placeholder="1883" />
-                  </label>
-                  <label class="field field-sm">
-                    <span>Conveyor ID</span>
-                    <input id="conveyorId" name="conveyorId" autocomplete="off" placeholder="C0" />
-                  </label>
-                </div>
-                <div class="btn-row">
-                  <button type="submit" class="btn-primary">Connect</button>
-                  <button id="disconnectButton" type="button" class="btn-ghost">Disconnect</button>
-                </div>
-              </form>
-            </section>
-
-            <section class="card state-card" id="stateCard">
-              <h2>Live State</h2>
-              <div class="state-body">
-                <span id="stateValue" class="state-big">UNKNOWN</span>
-                <span id="elapsedValue" class="state-elapsed">— ms</span>
-              </div>
-              <div id="errorValue" class="error-line">No active error</div>
-            </section>
-
-            <div class="metrics-row">
-              <div class="metric">
-                <span class="metric-label">Tray</span>
-                <strong id="trayValue">Unknown</strong>
-              </div>
-              <div class="metric">
-                <span class="metric-label">S0</span>
-                <strong id="s0Value">—</strong>
-                <span class="metric-hint">0 = detected</span>
-              </div>
-              <div class="metric">
-                <span class="metric-label">S1</span>
-                <strong id="s1Value">—</strong>
-                <span class="metric-hint">1 = clear</span>
-              </div>
-              <div class="metric">
-                <span class="metric-label">Direction</span>
-                <strong id="directionValue">UNKNOWN</strong>
-              </div>
-              <div class="metric">
-                <span class="metric-label">RSSI</span>
-                <strong id="rssiValue">—</strong>
-              </div>
-              <div class="metric">
-                <span class="metric-label">Gains (KP / KD)</span>
-                <strong><span id="kpValue">—</span> / <span id="kdValue">—</span></strong>
-              </div>
+        <section class="card">
+          <h2>Connection</h2>
+          <form id="connectForm">
+            <div class="field-row mqtt-field-row">
+              <label class="field">
+                <span>MQTT Host</span>
+                <input id="mqttHost" name="mqttHost" autocomplete="off" placeholder="192.168.1.126" />
+              </label>
+              <label class="field field-sm">
+                <span>Port</span>
+                <input id="mqttPort" name="mqttPort" type="number" min="1" max="65535" placeholder="1883" />
+              </label>
+              <label class="field field-sm">
+                <span>Conveyor 1</span>
+                <input id="conveyorIdA" name="conveyorIdA" autocomplete="off" placeholder="C0" />
+              </label>
+              <label class="field field-sm">
+                <span>Conveyor 2</span>
+                <input id="conveyorIdB" name="conveyorIdB" autocomplete="off" placeholder="C1" />
+              </label>
             </div>
+            <div class="btn-row">
+              <button type="submit" class="btn-primary">Connect</button>
+              <button id="disconnectButton" type="button" class="btn-ghost">Disconnect</button>
+              <button class="command btn-danger" data-command="all_stop" type="button">All Stop</button>
+            </div>
+          </form>
+        </section>
 
-          </div>
-
-          <!-- right column -->
-          <div class="col-right">
-
-            <section class="card">
-              <h2>Commands</h2>
-              <div class="cmd-grid">
-                <button class="command btn-cmd" data-command="tx">TX</button>
-                <button class="command btn-cmd" data-command="rx">RX</button>
-                <button class="command btn-cmd" data-command="clear_error">Clear Error</button>
-                <button class="command btn-cmd" data-command="get_direction">Get Direction</button>
-                <button class="command btn-cmd" data-command="get_rssi">Get RSSI</button>
-                <button class="command btn-danger" data-command="emergency_stop">Emergency Stop</button>
-                <button class="command btn-danger wide" data-command="all_stop">All Stop</button>
-              </div>
-            </section>
-
-            <section class="card">
-              <h2>Direction & PID</h2>
-              <div class="tune-row">
-                <label class="tune-label" for="directionSelect">Direction</label>
-                <select id="directionSelect">
-                  <option value="s0tos1">S0 → S1</option>
-                  <option value="s1tos0">S1 → S0</option>
-                </select>
-                <button id="setDirectionButton" class="command btn-cmd" type="button">Set</button>
-              </div>
-              <div class="tune-row">
-                <label class="tune-label" for="kpInput">KP</label>
-                <input id="kpInput" inputmode="decimal" value="0.010" />
-                <button id="setKpButton" class="command btn-cmd" type="button">Set</button>
-              </div>
-              <div class="tune-row">
-                <label class="tune-label" for="kdInput">KD</label>
-                <input id="kdInput" inputmode="decimal" value="0.010" />
-                <button id="setKdButton" class="command btn-cmd" type="button">Set</button>
-              </div>
-              <button class="command btn-ghost" data-command="reset_gains" type="button">Reset Gains</button>
-            </section>
-
-          </div>
-        </div>
+        <div id="conveyorCards" class="conveyor-grid"></div>
 
         <section class="card log-card">
           <div class="log-header">
@@ -269,24 +189,39 @@
               <div class="tune-row">
                 <label class="tune-label" for="serialConfigKey">Key</label>
                 <select id="serialConfigKey">
-                  <option value="run_pwm">run_pwm</option>
-                  <option value="run_speed_counts_per_sec">run_speed_counts_per_sec</option>
-                  <option value="speed_kp_milli">speed_kp_milli</option>
-                  <option value="speed_kd_milli">speed_kd_milli</option>
-                  <option value="done_hold_ms">done_hold_ms</option>
-                  <option value="tx_detect_timeout_ms">tx_detect_timeout_ms</option>
-                  <option value="tx_clear_timeout_ms">tx_clear_timeout_ms</option>
-                  <option value="rx_detect_timeout_ms">rx_detect_timeout_ms</option>
-                  <option value="rx_done_timeout_ms">rx_done_timeout_ms</option>
-                  <option value="mqtt_status_period_ms">mqtt_status_period_ms</option>
+                  <optgroup label="Motion">
+                    <option value="run_pwm">run_pwm</option>
+                    <option value="run_speed_counts_per_sec">run_speed_counts_per_sec</option>
+                    <option value="speed_kp_milli">speed_kp_milli</option>
+                    <option value="speed_kd_milli">speed_kd_milli</option>
+                  </optgroup>
+                  <optgroup label="Timing">
+                    <option value="done_hold_ms">done_hold_ms</option>
+                    <option value="tx_detect_timeout_ms">tx_detect_timeout_ms</option>
+                    <option value="tx_clear_timeout_ms">tx_clear_timeout_ms</option>
+                    <option value="rx_detect_timeout_ms">rx_detect_timeout_ms</option>
+                    <option value="rx_done_timeout_ms">rx_done_timeout_ms</option>
+                    <option value="mqtt_status_period_ms">mqtt_status_period_ms</option>
+                  </optgroup>
+                  <optgroup label="WiFi / MQTT">
+                    <option value="wifi_ssid">wifi_ssid</option>
+                    <option value="wifi_pass">wifi_pass</option>
+                    <option value="mqtt_broker_uri">mqtt_broker_uri</option>
+                    <option value="mqtt_topic_cmd">mqtt_topic_cmd</option>
+                    <option value="mqtt_topic_emergency">mqtt_topic_emergency</option>
+                    <option value="mqtt_topic_feedback">mqtt_topic_feedback</option>
+                    <option value="mqtt_topic_all_emergency">mqtt_topic_all_emergency</option>
+                    <option value="mqtt_topic_tray">mqtt_topic_tray</option>
+                  </optgroup>
                 </select>
                 <button id="serialGetConfigButton" class="btn-cmd" type="button">Get</button>
               </div>
               <div class="tune-row single-action-row">
                 <label class="tune-label" for="serialConfigValue">Value</label>
-                <input id="serialConfigValue" type="number" value="0" />
+                <input id="serialConfigValue" type="text" value="0" autocomplete="off" />
                 <button id="serialSetConfigButton" class="btn-cmd" type="button">Set</button>
               </div>
+              <p id="serialConfigHint" class="card-note config-note">Numeric runtime config value.</p>
               <div class="btn-row compact-row">
                 <button class="serial-command btn-ghost" data-serial-command="getconfig" type="button">Get All</button>
                 <button class="serial-command btn-danger" data-serial-command="resetconfig" data-confirm="Reset all runtime config values to firmware defaults?" type="button">Reset Config</button>

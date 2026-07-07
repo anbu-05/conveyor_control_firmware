@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .mqtt_backend import DEFAULT_CONVEYOR_ID, DEFAULT_MQTT_HOST, DEFAULT_MQTT_PORT, ConveyorMqttBackend
+from .mqtt_backend import DEFAULT_CONVEYOR_ID, DEFAULT_CONVEYOR_IDS, DEFAULT_MQTT_HOST, DEFAULT_MQTT_PORT, ConveyorMqttBackend
 from .serial_backend import DEFAULT_SERIAL_BAUD, DEFAULT_SERIAL_PORT, SerialBackend
 
 
@@ -20,11 +20,13 @@ class ConnectRequest(BaseModel):
     mqtt_host: str = Field(default=DEFAULT_MQTT_HOST, min_length=1)
     mqtt_port: int = Field(default=DEFAULT_MQTT_PORT, ge=1, le=65535)
     conveyor_id: str = Field(default=DEFAULT_CONVEYOR_ID, min_length=1)
+    conveyor_ids: list[str] = Field(default_factory=lambda: list(DEFAULT_CONVEYOR_IDS), min_length=1, max_length=2)
 
 
 class CommandRequest(BaseModel):
     command: str = Field(min_length=1)
     value: str | None = None
+    conveyor_id: str | None = None
 
 
 class SerialConnectRequest(BaseModel):
@@ -100,7 +102,11 @@ async def snapshot() -> dict[str, Any]:
 
 @app.post("/api/connect")
 async def connect(request: ConnectRequest) -> dict[str, Any]:
-    backend.connect(request.mqtt_host, request.mqtt_port, request.conveyor_id)
+    conveyor_ids = request.conveyor_ids or [request.conveyor_id]
+    try:
+        backend.connect(request.mqtt_host, request.mqtt_port, conveyor_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _broadcast_snapshot()
     return backend.snapshot_dict()
 
@@ -115,7 +121,7 @@ async def disconnect() -> dict[str, Any]:
 @app.post("/api/command")
 async def command(request: CommandRequest) -> dict[str, Any]:
     try:
-        backend.command(request.command, request.value)
+        backend.command(request.command, request.value, request.conveyor_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

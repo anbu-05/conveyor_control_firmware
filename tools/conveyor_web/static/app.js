@@ -11,11 +11,23 @@ const CONFIG_LIMITS = {
   mqtt_status_period_ms: [100, 60000],
 };
 
+const STRING_CONFIG_LIMITS = {
+  wifi_ssid: [1, 31],
+  wifi_pass: [1, 63],
+  mqtt_broker_uri: [1, 127],
+  mqtt_topic_cmd: [1, 95],
+  mqtt_topic_emergency: [1, 95],
+  mqtt_topic_feedback: [1, 95],
+  mqtt_topic_all_emergency: [1, 95],
+  mqtt_topic_tray: [1, 95],
+};
+
 const state = {
   connected: false,
   serialConnected: false,
   logLines: [],
   serialLogLines: [],
+  lastSerialConfig: {},
   socket: null,
 };
 
@@ -25,26 +37,11 @@ const el = {
   serialStatus: document.querySelector("#serialStatus"),
   mqttHost: document.querySelector("#mqttHost"),
   mqttPort: document.querySelector("#mqttPort"),
-  conveyorId: document.querySelector("#conveyorId"),
+  conveyorIdA: document.querySelector("#conveyorIdA"),
+  conveyorIdB: document.querySelector("#conveyorIdB"),
   connectForm: document.querySelector("#connectForm"),
   disconnectButton: document.querySelector("#disconnectButton"),
-  stateCard: document.querySelector("#stateCard"),
-  stateValue: document.querySelector("#stateValue"),
-  elapsedValue: document.querySelector("#elapsedValue"),
-  errorValue: document.querySelector("#errorValue"),
-  trayValue: document.querySelector("#trayValue"),
-  s0Value: document.querySelector("#s0Value"),
-  s1Value: document.querySelector("#s1Value"),
-  directionValue: document.querySelector("#directionValue"),
-  rssiValue: document.querySelector("#rssiValue"),
-  kpValue: document.querySelector("#kpValue"),
-  kdValue: document.querySelector("#kdValue"),
-  directionSelect: document.querySelector("#directionSelect"),
-  setDirectionButton: document.querySelector("#setDirectionButton"),
-  kpInput: document.querySelector("#kpInput"),
-  kdInput: document.querySelector("#kdInput"),
-  setKpButton: document.querySelector("#setKpButton"),
-  setKdButton: document.querySelector("#setKdButton"),
+  conveyorCards: document.querySelector("#conveyorCards"),
   clearLogButton: document.querySelector("#clearLogButton"),
   logOutput: document.querySelector("#logOutput"),
 
@@ -73,6 +70,7 @@ const el = {
   serialSetSpeedButton: document.querySelector("#serialSetSpeedButton"),
   serialConfigKey: document.querySelector("#serialConfigKey"),
   serialConfigValue: document.querySelector("#serialConfigValue"),
+  serialConfigHint: document.querySelector("#serialConfigHint"),
   serialGetConfigButton: document.querySelector("#serialGetConfigButton"),
   serialSetConfigButton: document.querySelector("#serialSetConfigButton"),
   serialKpInput: document.querySelector("#serialKpInput"),
@@ -107,11 +105,23 @@ function bindEvents() {
     button.addEventListener("click", () => sendCommand(button.dataset.command));
   });
 
-  el.setDirectionButton.addEventListener("click", () => {
-    sendCommand("set_direction", el.directionSelect.value);
+  el.conveyorCards.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-command]");
+    if (!button) return;
+    const card = button.closest("[data-conveyor-id]");
+    const conveyorId = card?.dataset.conveyorId || null;
+    const command = button.dataset.command;
+    if (command === "set_direction") {
+      sendCommand(command, card.querySelector("[data-role='direction']").value, conveyorId);
+    } else if (command === "set_kp") {
+      sendGain(command, card.querySelector("[data-role='kp']").value, conveyorId);
+    } else if (command === "set_kd") {
+      sendGain(command, card.querySelector("[data-role='kd']").value, conveyorId);
+    } else {
+      sendCommand(command, null, conveyorId);
+    }
   });
-  el.setKpButton.addEventListener("click", () => sendGain("set_kp", el.kpInput.value));
-  el.setKdButton.addEventListener("click", () => sendGain("set_kd", el.kdInput.value));
+
   el.clearLogButton.addEventListener("click", () => {
     state.logLines = [];
     renderLog();
@@ -134,6 +144,7 @@ function bindEvents() {
   el.serialGetConfigButton.addEventListener("click", () => {
     sendSerialCommand("getconfig", [el.serialConfigKey.value]);
   });
+  el.serialConfigKey.addEventListener("change", updateSerialConfigInput);
   el.serialSetConfigButton.addEventListener("click", setSerialConfig);
   el.serialSetKpButton.addEventListener("click", () => sendSerialGain("setkp", el.serialKpInput.value));
   el.serialSetKdButton.addEventListener("click", () => sendSerialGain("setkd", el.serialKdInput.value));
@@ -204,10 +215,13 @@ function connectWebSocket() {
 }
 
 async function connectMqtt() {
+  const conveyorIds = [el.conveyorIdA.value.trim() || "C0", el.conveyorIdB.value.trim() || "C1"]
+    .filter((value, index, values) => value && values.indexOf(value) === index);
   const body = {
     mqtt_host: el.mqttHost.value.trim() || "192.168.1.126",
     mqtt_port: Number.parseInt(el.mqttPort.value, 10) || 1883,
-    conveyor_id: el.conveyorId.value.trim() || "C0",
+    conveyor_id: conveyorIds[0] || "C0",
+    conveyor_ids: conveyorIds,
   };
   try {
     const snapshot = await postJson("/api/connect", body);
@@ -230,11 +244,11 @@ async function connectSerial() {
   }
 }
 
-async function sendCommand(command, value = null) {
+async function sendCommand(command, value = null, conveyorId = null) {
   try {
-    await postJson("/api/command", { command, value });
+    await postJson("/api/command", { command, value, conveyor_id: conveyorId });
   } catch (error) {
-    appendLog(`Command failed: ${command}: ${error.message}`);
+    appendLog(`Command failed: ${conveyorId ? `${conveyorId} ` : ""}${command}: ${error.message}`);
   }
 }
 
@@ -249,13 +263,13 @@ async function sendSerialCommand(command, args = [], confirmMessage = "") {
   }
 }
 
-function sendGain(command, value) {
+function sendGain(command, value, conveyorId) {
   const formatted = formatGain(value);
   if (formatted === null) {
     appendLog("Gain must be a decimal from 0.000 to 100.000");
     return;
   }
-  sendCommand(command, formatted);
+  sendCommand(command, formatted, conveyorId);
 }
 
 function sendSerialGain(command, value) {
@@ -287,10 +301,42 @@ function setSerialSpeed() {
 
 function setSerialConfig() {
   const key = el.serialConfigKey.value;
+  if (STRING_CONFIG_LIMITS[key]) {
+    const value = parseConfigString(el.serialConfigValue.value, key);
+    if (value === null) return;
+    sendSerialCommand("setconfig", [key, value]);
+    return;
+  }
+
   const [low, high] = CONFIG_LIMITS[key];
   const value = parseBoundedInt(el.serialConfigValue.value, low, high, key);
   if (value === null) return;
   sendSerialCommand("setconfig", [key, String(value)]);
+}
+
+function updateSerialConfigInput() {
+  const key = el.serialConfigKey.value;
+  if (STRING_CONFIG_LIMITS[key]) {
+    const [low, high] = STRING_CONFIG_LIMITS[key];
+    el.serialConfigValue.type = "text";
+    el.serialConfigValue.removeAttribute("min");
+    el.serialConfigValue.removeAttribute("max");
+    el.serialConfigValue.maxLength = high;
+    el.serialConfigValue.placeholder = `${low}-${high} chars, no spaces`;
+    el.serialConfigHint.textContent = `${key}: ${low}-${high} characters. Spaces are not allowed by serial setconfig.`;
+  } else {
+    const [low, high] = CONFIG_LIMITS[key];
+    el.serialConfigValue.type = "number";
+    el.serialConfigValue.min = low;
+    el.serialConfigValue.max = high;
+    el.serialConfigValue.removeAttribute("maxLength");
+    el.serialConfigValue.placeholder = `${low}-${high}`;
+    el.serialConfigHint.textContent = `${key}: integer from ${low} to ${high}.`;
+  }
+
+  if (state.lastSerialConfig && state.lastSerialConfig[key] !== undefined) {
+    el.serialConfigValue.value = state.lastSerialConfig[key];
+  }
 }
 
 async function sendSerialRaw() {
@@ -301,9 +347,6 @@ async function sendSerialRaw() {
   }
   if (line.includes("\n") || line.includes("\r")) {
     appendSerialLog("rx", "Raw command must be a single line");
-    return;
-  }
-  if (!window.confirm(`Send raw serial command: ${line}?`)) {
     return;
   }
   try {
@@ -339,28 +382,105 @@ function renderSnapshot(snapshot) {
   state.connected = Boolean(snapshot.connected);
   el.mqttHost.value = snapshot.mqtt_host || "192.168.1.126";
   el.mqttPort.value = snapshot.mqtt_port || 1883;
-  el.conveyorId.value = snapshot.conveyor_id || "C0";
+  const conveyorIds = snapshot.conveyor_ids || Object.keys(snapshot.conveyors || {});
+  el.conveyorIdA.value = conveyorIds[0] || "C0";
+  el.conveyorIdB.value = conveyorIds[1] || "C1";
   setPill(el.mqttStatus, state.connected ? "MQTT connected" : "MQTT disconnected", state.connected ? "good" : "bad");
 
-  el.stateValue.textContent = snapshot.state || "UNKNOWN";
-  el.elapsedValue.textContent = snapshot.state_elapsed_ms == null ? "- ms" : `${snapshot.state_elapsed_ms} ms`;
-  el.errorValue.textContent = snapshot.error || "No active error";
-  el.trayValue.textContent = trayText(snapshot.has_tray);
-  el.s0Value.textContent = sensorText(snapshot.s0);
-  el.s1Value.textContent = sensorText(snapshot.s1);
-  el.directionValue.textContent = snapshot.direction || "UNKNOWN";
-  el.rssiValue.textContent = snapshot.rssi == null ? "-" : `${snapshot.rssi} dBm`;
-  el.kpValue.textContent = snapshot.speed_kp || "-";
-  el.kdValue.textContent = snapshot.speed_kd || "-";
+  renderConveyorCards(snapshot);
 
-  el.stateCard.classList.toggle("error", Boolean(snapshot.error) || snapshot.state === "ERROR" || snapshot.state === "ESTOP");
   document.querySelectorAll(".command").forEach((button) => {
     button.disabled = !state.connected;
   });
 }
 
+function renderConveyorCards(snapshot) {
+  const conveyorIds = snapshot.conveyor_ids || Object.keys(snapshot.conveyors || {});
+  const conveyors = snapshot.conveyors || {};
+  const active = document.activeElement;
+  const activeCard = active?.closest?.("[data-conveyor-id]");
+  const activeState = activeCard && active.dataset.role
+    ? {
+        conveyorId: activeCard.dataset.conveyorId,
+        role: active.dataset.role,
+        value: active.value,
+        selectionStart: active.selectionStart,
+        selectionEnd: active.selectionEnd,
+      }
+    : null;
+
+  el.conveyorCards.innerHTML = conveyorIds.map((conveyorId) => conveyorCardHtml(conveyorId, conveyors[conveyorId] || {})).join("");
+
+  if (activeState) {
+    const selector = `[data-conveyor-id='${cssEscape(activeState.conveyorId)}'] [data-role='${cssEscape(activeState.role)}']`;
+    const restored = el.conveyorCards.querySelector(selector);
+    if (restored) {
+      restored.value = activeState.value;
+      restored.focus();
+      if (typeof restored.setSelectionRange === "function" && activeState.selectionStart !== null && activeState.selectionEnd !== null) {
+        restored.setSelectionRange(activeState.selectionStart, activeState.selectionEnd);
+      }
+    }
+  }
+}
+
+function conveyorCardHtml(conveyorId, conveyor) {
+  const hasError = Boolean(conveyor.error) || conveyor.state === "ERROR" || conveyor.state === "ESTOP";
+  return `
+    <section class="card conveyor-card" data-conveyor-id="${escapeHtml(conveyorId)}">
+      <div class="conveyor-card-header">
+        <h2>${escapeHtml(conveyorId)}</h2>
+        <span class="pill ${hasError ? "bad" : "muted"}">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
+      </div>
+      <div class="state-card ${hasError ? "error" : ""}">
+        <div class="state-body">
+          <span class="state-big">${escapeHtml(conveyor.state || "UNKNOWN")}</span>
+          <span class="state-elapsed">${conveyor.state_elapsed_ms == null ? "- ms" : `${conveyor.state_elapsed_ms} ms`}</span>
+        </div>
+        <div class="error-line">${escapeHtml(conveyor.error || "No active error")}</div>
+      </div>
+      <div class="metrics-row conveyor-metrics">
+        <div class="metric"><span class="metric-label">Tray</span><strong>${trayText(conveyor.has_tray)}</strong></div>
+        <div class="metric"><span class="metric-label">S0</span><strong>${sensorText(conveyor.s0)}</strong></div>
+        <div class="metric"><span class="metric-label">S1</span><strong>${sensorText(conveyor.s1)}</strong></div>
+        <div class="metric"><span class="metric-label">Direction</span><strong>${escapeHtml(conveyor.direction || "UNKNOWN")}</strong></div>
+        <div class="metric"><span class="metric-label">RSSI</span><strong>${conveyor.rssi == null ? "-" : `${conveyor.rssi} dBm`}</strong></div>
+        <div class="metric"><span class="metric-label">KP / KD</span><strong>${escapeHtml(conveyor.speed_kp || "-")} / ${escapeHtml(conveyor.speed_kd || "-")}</strong></div>
+      </div>
+      <div class="cmd-grid conveyor-command-grid">
+        <button class="command btn-cmd" data-command="tx">TX</button>
+        <button class="command btn-cmd" data-command="rx">RX</button>
+        <button class="command btn-cmd" data-command="clear_error">Clear Error</button>
+        <button class="command btn-cmd" data-command="get_direction">Get Direction</button>
+        <button class="command btn-cmd" data-command="get_rssi">Get RSSI</button>
+        <button class="command btn-danger" data-command="emergency_stop">Emergency Stop</button>
+      </div>
+      <div class="tune-row">
+        <label class="tune-label">Direction</label>
+        <select data-role="direction">
+          <option value="s0tos1">S0 to S1</option>
+          <option value="s1tos0">S1 to S0</option>
+        </select>
+        <button class="command btn-cmd" data-command="set_direction" type="button">Set</button>
+      </div>
+      <div class="tune-row">
+        <label class="tune-label">KP</label>
+        <input data-role="kp" inputmode="decimal" value="${escapeHtml(conveyor.speed_kp || "0.010")}" />
+        <button class="command btn-cmd" data-command="set_kp" type="button">Set</button>
+      </div>
+      <div class="tune-row">
+        <label class="tune-label">KD</label>
+        <input data-role="kd" inputmode="decimal" value="${escapeHtml(conveyor.speed_kd || "0.010")}" />
+        <button class="command btn-cmd" data-command="set_kd" type="button">Set</button>
+      </div>
+      <button class="command btn-ghost" data-command="reset_gains" type="button">Reset Gains</button>
+    </section>
+  `;
+}
+
 function renderSerialSnapshot(snapshot) {
   state.serialConnected = Boolean(snapshot.connected);
+  state.lastSerialConfig = snapshot.config || {};
   el.serialPort.value = snapshot.port || "/dev/ttyACM0";
   el.serialBaud.value = snapshot.baud || 115200;
   setPill(el.serialStatus, state.serialConnected ? "Serial connected" : "Serial disconnected", state.serialConnected ? "good" : "bad");
@@ -421,6 +541,23 @@ function valueText(value) {
   return String(value);
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  })[char]);
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(value);
+  }
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
 function formatGain(value) {
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
@@ -433,6 +570,20 @@ function parseBoundedInt(value, low, high, label) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < low || parsed > high) {
     appendSerialLog("rx", `${label} must be an integer from ${low} to ${high}`);
+    return null;
+  }
+  return parsed;
+}
+
+function parseConfigString(value, label) {
+  const parsed = value.trim();
+  const [low, high] = STRING_CONFIG_LIMITS[label];
+  if (parsed.length < low || parsed.length > high) {
+    appendSerialLog("rx", `${label} must be ${low} to ${high} characters`);
+    return null;
+  }
+  if (/\s/.test(parsed)) {
+    appendSerialLog("rx", `${label} must not contain spaces`);
     return null;
   }
   return parsed;
@@ -473,3 +624,4 @@ function renderSerialLog() {
 }
 
 start();
+updateSerialConfigInput();

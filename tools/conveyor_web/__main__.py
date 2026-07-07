@@ -5,6 +5,7 @@ import argparse
 DEFAULT_MQTT_HOST = "192.168.1.126"
 DEFAULT_MQTT_PORT = 1883
 DEFAULT_CONVEYOR_ID = "C0"
+DEFAULT_CONVEYOR_IDS = "C0,C1"
 DEFAULT_SERIAL_PORT = "/dev/ttyACM0"
 DEFAULT_SERIAL_BAUD = 115200
 
@@ -16,6 +17,7 @@ def main() -> None:
     parser.add_argument("--mqtt-host", default=DEFAULT_MQTT_HOST, help="Default MQTT broker host shown in the UI")
     parser.add_argument("--mqtt-port", default=DEFAULT_MQTT_PORT, type=int, help="Default MQTT broker port shown in the UI")
     parser.add_argument("--id", default=DEFAULT_CONVEYOR_ID, help="Default conveyor ID shown in the UI")
+    parser.add_argument("--ids", default=DEFAULT_CONVEYOR_IDS, help="Comma-separated conveyor IDs shown in the UI")
     parser.add_argument("--serial-port", default=DEFAULT_SERIAL_PORT, help="Default serial port shown in the UI")
     parser.add_argument("--serial-baud", default=DEFAULT_SERIAL_BAUD, type=int, help="Default serial baud shown in the UI")
     args = parser.parse_args()
@@ -23,11 +25,21 @@ def main() -> None:
     import uvicorn
 
     from . import server
+    from .mqtt_backend import ConveyorRuntime, ConveyorTopics
 
     server.backend.snapshot.mqtt_host = args.mqtt_host
     server.backend.snapshot.mqtt_port = args.mqtt_port
-    server.backend.snapshot.conveyor_id = args.id
-    server.backend.topics = server.backend.topics.__class__(conveyor_id=args.id)
+    conveyor_ids = [part.strip() for part in args.ids.split(",") if part.strip()]
+    if not conveyor_ids:
+        conveyor_ids = [args.id]
+    conveyor_ids = conveyor_ids[:2]
+    server.backend.snapshot.conveyor_ids = conveyor_ids
+    server.backend.snapshot.conveyors = {
+        conveyor_id: ConveyorRuntime(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids
+    }
+    server.backend.topics = {
+        conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids
+    }
     server.serial_backend.snapshot.port = args.serial_port
     server.serial_backend.snapshot.baud = args.serial_baud
 

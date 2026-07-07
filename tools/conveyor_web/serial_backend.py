@@ -31,6 +31,17 @@ CONFIG_LIMITS: dict[str, tuple[int, int]] = {
     "mqtt_status_period_ms": (100, 60000),
 }
 
+STRING_CONFIG_LIMITS: dict[str, tuple[int, int]] = {
+    "wifi_ssid": (1, 31),
+    "wifi_pass": (1, 63),
+    "mqtt_broker_uri": (1, 127),
+    "mqtt_topic_cmd": (1, 95),
+    "mqtt_topic_emergency": (1, 95),
+    "mqtt_topic_feedback": (1, 95),
+    "mqtt_topic_all_emergency": (1, 95),
+    "mqtt_topic_tray": (1, 95),
+}
+
 
 @dataclass
 class SerialSnapshot:
@@ -355,6 +366,15 @@ class SerialBackend:
         if name == "setconfig":
             self._expect_args(name, args, 2)
             self._expect_config_key(args[0])
+            if args[0] in STRING_CONFIG_LIMITS:
+                value = args[1].strip()
+                low, high = STRING_CONFIG_LIMITS[args[0]]
+                if len(value) < low or len(value) > high:
+                    raise ValueError(f"{args[0]} must be {low} to {high} characters")
+                if any(ch.isspace() for ch in value):
+                    raise ValueError(f"{args[0]} must not contain spaces")
+                return f"setconfig {args[0]} {value}"
+
             value = self._parse_int(args[1], "config value")
             low, high = CONFIG_LIMITS[args[0]]
             if value < low or value > high:
@@ -393,7 +413,7 @@ class SerialBackend:
 
     @staticmethod
     def _expect_config_key(value: str) -> None:
-        if value not in CONFIG_LIMITS:
+        if value not in CONFIG_LIMITS and value not in STRING_CONFIG_LIMITS:
             raise ValueError("unknown config key")
 
     @staticmethod

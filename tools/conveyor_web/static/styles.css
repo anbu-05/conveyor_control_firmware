@@ -150,6 +150,13 @@ h1 {
   grid-template-columns: 1fr 380px;
 }
 
+.conveyor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
 .col-left, .col-right {
   display: flex;
   flex-direction: column;
@@ -192,6 +199,10 @@ h1 {
 }
 
 .field-sm { min-width: 100px; }
+
+.mqtt-field-row {
+  grid-template-columns: 1fr 110px 130px 130px;
+}
 
 input, select {
   font: inherit;
@@ -315,6 +326,43 @@ button:disabled {
 .state-card.error .error-line {
   color: var(--bad);
   font-weight: 500;
+}
+
+.conveyor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.conveyor-card h2 {
+  margin-bottom: 0;
+}
+
+.conveyor-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.conveyor-card .state-card {
+  padding: 0.75rem 0;
+}
+
+.conveyor-card .state-body {
+  margin-bottom: 0.35rem;
+}
+
+.conveyor-card .state-big {
+  font-size: 1.45rem;
+}
+
+.conveyor-metrics {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.conveyor-command-grid {
+  margin-top: 0.1rem;
 }
 
 /* ── metrics row ─────────────────────────────────────── */
@@ -480,6 +528,12 @@ details summary {
   .serial-grid {
     grid-template-columns: 1fr;
   }
+  .conveyor-grid {
+    grid-template-columns: 1fr;
+  }
+  .mqtt-field-row {
+    grid-template-columns: 1fr 1fr;
+  }
   .field-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -519,6 +573,7 @@ details summary {
     flex: 1;
   }
   .serial-field-row,
+  .mqtt-field-row,
   .raw-console,
   .watch-row {
     grid-template-columns: 1fr;

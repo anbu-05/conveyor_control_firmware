@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 try:
@@ -17,6 +17,7 @@ except ImportError as exc:  # pragma: no cover - exercised only without dependen
 DEFAULT_MQTT_HOST = "192.168.1.126"
 DEFAULT_MQTT_PORT = 1883
 DEFAULT_CONVEYOR_ID = "C0"
+DEFAULT_CONVEYOR_IDS = ("C0", "C1")
 
 
 @dataclass(frozen=True)
@@ -54,10 +55,7 @@ class ConveyorTopics:
 
 
 @dataclass
-class ConveyorSnapshot:
-    connected: bool = False
-    mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: int = DEFAULT_MQTT_PORT
+class ConveyorRuntime:
     conveyor_id: str = DEFAULT_CONVEYOR_ID
     state: str = "UNKNOWN"
     state_elapsed_ms: int | None = None
@@ -72,6 +70,17 @@ class ConveyorSnapshot:
     last_topic: str = ""
     last_payload: str = ""
     last_update_monotonic: float | None = None
+
+
+@dataclass
+class ConveyorSnapshot:
+    connected: bool = False
+    mqtt_host: str = DEFAULT_MQTT_HOST
+    mqtt_port: int = DEFAULT_MQTT_PORT
+    conveyor_ids: list[str] = field(default_factory=lambda: list(DEFAULT_CONVEYOR_IDS))
+    conveyors: dict[str, ConveyorRuntime] = field(
+        default_factory=lambda: {conveyor_id: ConveyorRuntime(conveyor_id=conveyor_id) for conveyor_id in DEFAULT_CONVEYOR_IDS}
+    )
 
 
 @dataclass(frozen=True)
@@ -91,22 +100,26 @@ class ConveyorMqttBackend:
     def __init__(self) -> None:
         self.events: queue.Queue[ConveyorEvent] = queue.Queue()
         self.snapshot = ConveyorSnapshot()
-        self.topics = ConveyorTopics()
+        self.topics: dict[str, ConveyorTopics] = {
+            conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in DEFAULT_CONVEYOR_IDS
+        }
         self._client: mqtt.Client | None = None
 
     def snapshot_dict(self) -> dict[str, Any]:
         data = asdict(self.snapshot)
-        data["topics"] = self.topics.as_dict()
+        data["topics"] = {conveyor_id: topics.as_dict() for conveyor_id, topics in self.topics.items()}
         return data
 
-    def connect(self, host: str, port: int, conveyor_id: str) -> None:
+    def connect(self, host: str, port: int, conveyor_ids: list[str]) -> None:
         self.disconnect(emit=False)
-        self.topics = ConveyorTopics(conveyor_id=conveyor_id)
+        conveyor_ids = self._normalize_conveyor_ids(conveyor_ids)
+        self.topics = {conveyor_id: ConveyorTopics(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
         self.snapshot.mqtt_host = host
         self.snapshot.mqtt_port = port
-        self.snapshot.conveyor_id = conveyor_id
+        self.snapshot.conveyor_ids = conveyor_ids
+        self.snapshot.conveyors = {conveyor_id: ConveyorRuntime(conveyor_id=conveyor_id) for conveyor_id in conveyor_ids}
 
-        client_id = f"conveyor_web_{conveyor_id}_{int(time.time())}"
+        client_id = f"conveyor_web_{'_'.join(conveyor_ids)}_{int(time.time())}"
         client = self._make_client(client_id)
         client.on_connect = self._on_connect
         client.on_disconnect = self._on_disconnect
@@ -131,36 +144,47 @@ class ConveyorMqttBackend:
             if emit:
                 self._emit("status", "MQTT disconnected")
 
-    def command(self, name: str, value: str | None = None) -> None:
+    def command(self, name: str, value: str | None = None, conveyor_id: str | None = None) -> None:
+        topics = self._topics_for_command(name, conveyor_id)
         if name == "tx":
-            self._publish_command({"type": "tx"})
+            self._publish_command(topics, {"type": "tx"})
         elif name == "rx":
-            self._publish_command({"type": "rx"})
+            self._publish_command(topics, {"type": "rx"})
         elif name == "clear_error":
-            self._publish_command({"type": "clear_error"})
+            self._publish_command(topics, {"type": "clear_error"})
         elif name == "emergency_stop":
-            self._publish(self.topics.emergency, self._compact_json({"type": "emergency_stop"}))
+            self._publish(topics.emergency, self._compact_json({"type": "emergency_stop"}))
         elif name == "all_stop":
-            self._publish(self.topics.all_emergency, "STOP")
+            self._publish(ConveyorTopics().all_emergency, "STOP")
         elif name == "get_direction":
-            self._publish_command({"type": "getdirection"})
+            self._publish_command(topics, {"type": "getdirection"})
         elif name == "get_rssi":
-            self._publish_command({"type": "getrssi"})
+            self._publish_command(topics, {"type": "getrssi"})
         elif name == "reset_gains":
-            self._publish_command({"type": "resetk"})
+            self._publish_command(topics, {"type": "resetk"})
         elif name == "set_direction":
-            self.set_direction(value)
+            self.set_direction(value, topics)
         elif name == "set_kp":
-            self._publish_command({"type": "setkp", "value": self._format_gain(value)})
+            self._publish_command(topics, {"type": "setkp", "value": self._format_gain(value)})
         elif name == "set_kd":
-            self._publish_command({"type": "setkd", "value": self._format_gain(value)})
+            self._publish_command(topics, {"type": "setkd", "value": self._format_gain(value)})
         else:
             raise ValueError(f"unsupported command: {name}")
 
-    def set_direction(self, value: str | None) -> None:
+    def set_direction(self, value: str | None, topics: ConveyorTopics) -> None:
         if value not in {"s0tos1", "s1tos0"}:
             raise ValueError("direction must be s0tos1 or s1tos0")
-        self._publish_command({"type": "setdirection", "value": value})
+        self._publish_command(topics, {"type": "setdirection", "value": value})
+
+    def _topics_for_command(self, name: str, conveyor_id: str | None) -> ConveyorTopics:
+        if name == "all_stop":
+            return ConveyorTopics()
+        if conveyor_id is None:
+            raise ValueError("conveyor_id is required")
+        topics = self.topics.get(conveyor_id)
+        if topics is None:
+            raise ValueError(f"unknown conveyor_id: {conveyor_id}")
+        return topics
 
     def _make_client(self, client_id: str) -> mqtt.Client:
         callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
@@ -175,11 +199,13 @@ class ConveyorMqttBackend:
             return
 
         self.snapshot.connected = True
-        client.subscribe(self.topics.feedback, qos=0)
-        client.subscribe(self.topics.tray, qos=0)
+        for topics in self.topics.values():
+            client.subscribe(topics.feedback, qos=0)
+            client.subscribe(topics.tray, qos=0)
         self._emit("status", f"MQTT connected to {self.snapshot.mqtt_host}:{self.snapshot.mqtt_port}")
-        self.command("get_direction")
-        self.command("get_rssi")
+        for conveyor_id in self.snapshot.conveyor_ids:
+            self.command("get_direction", conveyor_id=conveyor_id)
+            self.command("get_rssi", conveyor_id=conveyor_id)
 
     def _on_disconnect(self, _client: mqtt.Client, _userdata: Any, rc: int) -> None:
         self.snapshot.connected = False
@@ -198,43 +224,54 @@ class ConveyorMqttBackend:
         except json.JSONDecodeError:
             data = None
 
-        self.snapshot.last_topic = message.topic
-        self.snapshot.last_payload = payload
-        self.snapshot.last_update_monotonic = time.monotonic()
+        conveyor_id = self._conveyor_id_for_topic(message.topic)
+        runtime = self.snapshot.conveyors.get(conveyor_id) if conveyor_id is not None else None
+        if runtime is not None:
+            runtime.last_topic = message.topic
+            runtime.last_payload = payload
+            runtime.last_update_monotonic = time.monotonic()
         if data is not None:
-            self._update_snapshot(data)
+            self._update_snapshot(data, runtime)
 
         self._emit("message", f"RX {message.topic} {payload}", message.topic, payload, data)
 
-    def _update_snapshot(self, data: dict[str, Any]) -> None:
+    def _update_snapshot(self, data: dict[str, Any], runtime: ConveyorRuntime | None) -> None:
+        if runtime is None:
+            return
         if "state" in data:
-            self.snapshot.state = str(data["state"])
+            runtime.state = str(data["state"])
         if "state_elapsed_ms" in data:
-            self.snapshot.state_elapsed_ms = self._as_int(data["state_elapsed_ms"])
+            runtime.state_elapsed_ms = self._as_int(data["state_elapsed_ms"])
         if "error" in data:
-            self.snapshot.error = str(data["error"])
+            runtime.error = str(data["error"])
         elif "state" in data and str(data["state"]) not in {"ERROR", "ESTOP"}:
-            self.snapshot.error = ""
+            runtime.error = ""
         if "has_tray" in data:
-            self.snapshot.has_tray = bool(data["has_tray"])
+            runtime.has_tray = bool(data["has_tray"])
         if "s0" in data:
-            self.snapshot.s0 = self._as_int(data["s0"])
+            runtime.s0 = self._as_int(data["s0"])
         if "s1" in data:
-            self.snapshot.s1 = self._as_int(data["s1"])
+            runtime.s1 = self._as_int(data["s1"])
         if "direction" in data:
-            self.snapshot.direction = str(data["direction"])
+            runtime.direction = str(data["direction"])
         if "rssi" in data:
-            self.snapshot.rssi = self._as_int(data["rssi"])
+            runtime.rssi = self._as_int(data["rssi"])
         if data.get("config") == "speed_kp" and "value" in data:
-            self.snapshot.speed_kp = str(data["value"])
+            runtime.speed_kp = str(data["value"])
         if data.get("config") == "speed_kd" and "value" in data:
-            self.snapshot.speed_kd = str(data["value"])
+            runtime.speed_kd = str(data["value"])
         if data.get("config") == "speed_gains":
-            self.snapshot.speed_kp = str(data.get("speed_kp", self.snapshot.speed_kp))
-            self.snapshot.speed_kd = str(data.get("speed_kd", self.snapshot.speed_kd))
+            runtime.speed_kp = str(data.get("speed_kp", runtime.speed_kp))
+            runtime.speed_kd = str(data.get("speed_kd", runtime.speed_kd))
 
-    def _publish_command(self, payload: dict[str, str]) -> None:
-        self._publish(self.topics.command, self._compact_json(payload))
+    def _publish_command(self, topics: ConveyorTopics, payload: dict[str, str]) -> None:
+        self._publish(topics.command, self._compact_json(payload))
+
+    def _conveyor_id_for_topic(self, topic: str) -> str | None:
+        for conveyor_id, topics in self.topics.items():
+            if topic in {topics.feedback, topics.tray}:
+                return conveyor_id
+        return None
 
     def _publish(self, topic: str, payload: str) -> None:
         if self._client is None or not self.snapshot.connected:
@@ -269,6 +306,19 @@ class ConveyorMqttBackend:
     @staticmethod
     def _compact_json(payload: dict[str, str]) -> str:
         return json.dumps(payload, separators=(",", ":"))
+
+    @staticmethod
+    def _normalize_conveyor_ids(conveyor_ids: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for conveyor_id in conveyor_ids:
+            conveyor_id = conveyor_id.strip()
+            if conveyor_id and conveyor_id not in normalized:
+                normalized.append(conveyor_id)
+        if not normalized:
+            raise ValueError("at least one conveyor ID is required")
+        if len(normalized) > 2:
+            raise ValueError("only two conveyor IDs are supported")
+        return normalized
 
     @staticmethod
     def _format_gain(value: str | None) -> str:
