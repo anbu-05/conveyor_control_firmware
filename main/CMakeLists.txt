@@ -4,11 +4,11 @@ idf_component_register(
         "config/runtime_config.c"
         "shared/app_state.c"
         "statemachine/statemachine.c"
-        "tasks/console_task.c"
-        "tasks/mqtt_task.c"
-        "tasks/hardware_task.c"
-        "tasks/motor_pid_task.c"
-        "tasks/safety_task.c"
+        "tasks/console.c"
+        "tasks/mqtt.c"
+        "tasks/hardware.c"
+        "tasks/pid.c"
+        "tasks/safety.c"
         "store/axis_store.c"
     INCLUDE_DIRS
         "."
@@ -17,5 +17,5 @@ idf_component_register(
         "statemachine"
         "tasks"
         "store"
-    REQUIRES nvs_flash esp_wifi esp_event esp_netif driver
+    REQUIRES nvs_flash esp_wifi esp_event esp_netif driver console
 )

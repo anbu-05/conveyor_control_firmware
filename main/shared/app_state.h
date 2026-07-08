@@ -2,8 +2,8 @@
 
 /*
  * Shared application state.
- * axis is intentionally exposed so tasks can update the fields they own
- * without adding one app_state helper per value. Take axis_mutex before direct
+ * motors is intentionally exposed so tasks can update the fields they own
+ * without adding one app_state helper per value. Take motor_mutex before direct
  * multi-field reads or writes so snapshots stay consistent across tasks.
  */
 
@@ -16,10 +16,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#define APP_AXIS_COUNT 1
+#define APP_MOTOR_COUNT 1
+#define APP_MOTOR_ID_MAX_LEN 8
 
 typedef struct {
-    const char *name;
+    /* Stable user-facing id used by console, hardware APIs, and PID APIs. */
+    char id[APP_MOTOR_ID_MAX_LEN];
 
     /* Current motor output requested by set_motor(). */
     int pwm;
@@ -39,6 +41,11 @@ typedef struct {
     float ki;
     float kd;
 
+    /* Per-motor PID runtime memory owned by that motor's PID task instance. */
+    float integral;
+    float previous_error;
+    bool has_previous_error;
+
     /* Pin and peripheral handles stay beside the runtime values they describe. */
     gpio_num_t dir_gpio;
     gpio_num_t pwm_gpio;
@@ -52,10 +59,10 @@ typedef struct {
     /* Direct GPIO levels from the two physical sensors. */
     int positive_sensor;
     int negative_sensor;
-} axis_t;
+} motor_t;
 
-extern SemaphoreHandle_t axis_mutex;
-extern axis_t axis;
+extern SemaphoreHandle_t motor_mutex;
+extern motor_t motors[APP_MOTOR_COUNT];
 
 /* Initializes the protected shared status snapshot before producer tasks start. */
 esp_err_t app_state_init(void);

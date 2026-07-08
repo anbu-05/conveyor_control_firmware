@@ -4,7 +4,7 @@
  * persistence restore are working through console control.
  */
 
-#include "tasks/mqtt_task.h"
+#include "tasks/mqtt.h"
 
 #include <stdbool.h>
 

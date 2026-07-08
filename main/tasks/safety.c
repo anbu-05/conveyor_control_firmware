@@ -4,7 +4,7 @@
  * stops after base local movement and state ownership are established.
  */
 
-#include "tasks/safety_task.h"
+#include "tasks/safety.h"
 
 #include <stdbool.h>
 

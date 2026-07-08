@@ -2,8 +2,8 @@
 
 /*
  * Console task public API.
- * The console is an input producer and diagnostics surface; it must submit axis
- * requests to the state-machine queue instead of changing app state directly.
+ * The console is an input producer and diagnostics surface; it calls public
+ * motor APIs for local commissioning commands.
  */
 
 #include "esp_err.h"
