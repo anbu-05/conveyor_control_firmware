@@ -1,311 +1,317 @@
-#include "app_state.h"
+/*
+ * PID motor-control task.
+ * This task owns repetitive position-control output so the state machine can set
+ * a target once without writing direction/PWM every control tick.
+ */
 
+#include "tasks/motor_pid_task.h"
+
+#include <stdbool.h>
 #include <stdint.h>
 
-#include "config.h"
-#include "driver/gpio.h"
-#include "driver/ledc.h"
-#include "driver/pulse_cnt.h"
+#include "config/config.h"
+#include "config/runtime_config.h"
 #include "esp_err.h"
-#include "runtime_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "shared/app_state.h"
+#include "tasks/hardware_task.h"
 
-#define SPEED_AVG_SAMPLE_COUNT 5
-#define SPEED_D_BASE_DELAY_MS 20
+#define PID_GAIN_SCALE 1000.0f
 
-typedef struct {
-    int pwm;
-    int speed;
-} speed_pwm_point_t;
-
-typedef struct {
+typedef struct
+{
+    int current_position;
+    int target_position;
     int target_speed;
-    int speed;
-    int error;
-    int base_pwm;
-    int p_step;
-    int d_step;
-    int requested_pwm;
-    int applied_pwm;
     int direction;
-    int kp_milli;
-    int kd_milli;
-} pid_debug_t;
+    int pwm;
+    bool position_control;
+    float kp;
+    float ki;
+    float kd;
+} pid_snapshot_t;
 
-static const speed_pwm_point_t speed_pwm_table[] = {
-    {0, 0},
-    {8, 360},
-    {16, 1040},
-    {24, 1650},
-    {32, 2270},
-    {48, 3490},
-    {64, 4670},
-    {72, 5340},
-    {80, 6050},
-    {88, 6570},
-    {96, 7230},
-    {104, 7890},
-    {112, 8590},
-    {120, 9260},
-    {128, 9870},
-};
+static float s_integral;
+static float s_previous_error;
+static bool s_has_previous_error;
 
-static int abs_int(int value)
+/* Returns an integer absolute value without pulling in extra math helpers. */
+static int int_abs(int value)
 {
-    if (value < 0) {
-        return -value;
-    }
-
-    return value;
+    return value < 0 ? -value : value;
 }
 
-static int clamp_int(int value, int minimum, int maximum)
+/* Converts runtime-config milli-unit gains into live float PID gains. */
+static float config_gain_or_zero(runtime_config_key_t key)
 {
-    if (value < minimum) {
-        return minimum;
-    }
-    if (value > maximum) {
-        return maximum;
+    int32_t value = 0;
+    if (runtime_config_get(key, &value) != ESP_OK)
+    {
+        return 0.0f;
     }
 
-    return value;
+    return (float)value / PID_GAIN_SCALE;
 }
 
-static int speed_to_base_pwm(int target_speed)
+/* Reads the PID-relevant axis fields as one consistent snapshot. */
+static pid_snapshot_t read_pid_snapshot(void)
 {
-    int point_count = sizeof(speed_pwm_table) / sizeof(speed_pwm_table[0]);
+    pid_snapshot_t snapshot = {0};
 
-    if (target_speed <= 0) {
-        return 0;
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreTake(axis_mutex, portMAX_DELAY);
     }
 
-    for (int i = 1; i < point_count; i++) {
-        if (target_speed <= speed_pwm_table[i].speed) {
-            int low_speed = speed_pwm_table[i - 1].speed;
-            int high_speed = speed_pwm_table[i].speed;
-            int low_pwm = speed_pwm_table[i - 1].pwm;
-            int high_pwm = speed_pwm_table[i].pwm;
+    snapshot.current_position = axis.current_position;
+    snapshot.target_position = axis.target_position;
+    snapshot.target_speed = axis.target_speed;
+    snapshot.direction = axis.direction;
+    snapshot.pwm = axis.pwm;
+    snapshot.position_control = axis.position_control;
+    snapshot.kp = axis.kp;
+    snapshot.ki = axis.ki;
+    snapshot.kd = axis.kd;
 
-            return low_pwm + ((target_speed - low_speed) * (high_pwm - low_pwm)) / (high_speed - low_speed);
-        }
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreGive(axis_mutex);
     }
 
-    return CONVEYOR_SPEED_PID_PWM_MAX;
+    return snapshot;
 }
 
-static int direction_to_sign(int direction)
+/* Clamps the integral accumulator to the largest useful speed contribution. */
+static float clamp_integral(float integral, float ki, int32_t max_speed_counts_per_sec)
 {
-    if (direction == 0) {
-        return -1;
+    if (ki <= 0.0f)
+    {
+        return 0.0f;
     }
 
-    return 1;
+    const float limit = (float)max_speed_counts_per_sec / ki;
+    if (integral > limit)
+    {
+        return limit;
+    }
+    if (integral < -limit)
+    {
+        return -limit;
+    }
+
+    return integral;
 }
 
-static void slew_signed_pwm_toward(int *signed_pwm, int requested_signed_pwm)
+/* Clamps signed speed to the configured counts/sec range. */
+static int clamp_speed(float speed_counts_per_sec, int32_t max_speed_counts_per_sec)
 {
-    if (*signed_pwm < requested_signed_pwm) {
-        *signed_pwm += CONVEYOR_PWM_SLEW_STEP;
-        if (*signed_pwm > requested_signed_pwm) {
-            *signed_pwm = requested_signed_pwm;
-        }
-    } else if (*signed_pwm > requested_signed_pwm) {
-        *signed_pwm -= CONVEYOR_PWM_SLEW_STEP;
-        if (*signed_pwm < requested_signed_pwm) {
-            *signed_pwm = requested_signed_pwm;
-        }
+    if (speed_counts_per_sec > (float)max_speed_counts_per_sec)
+    {
+        return (int)max_speed_counts_per_sec;
     }
+    if (speed_counts_per_sec < (float)-max_speed_counts_per_sec)
+    {
+        return (int)-max_speed_counts_per_sec;
+    }
+
+    return (int)speed_counts_per_sec;
 }
 
-static void update_motor_speed_control(motor_t *motor, int speed, int *last_error, int *direction, int *pwm,
-                                       pid_debug_t *debug)
+/* Converts signed speed in encoder counts/sec to direction and PWM. */
+static esp_err_t set_motor_speed(int speed_counts_per_sec,
+                                 int current_direction,
+                                 int32_t max_speed_counts_per_sec,
+                                 int32_t max_pwm)
 {
-    int target_speed = 0;
-    int error = 0;
-    int d_error = 0;
-    int normalized_d_error = 0;
-    int base_pwm = 0;
-    int base_pwm_magnitude = 0;
-    int p_step = 0;
-    int d_step = 0;
-    int requested_signed_pwm = 0;
-    int current_signed_pwm = 0;
-    int kp_milli = runtime_config_speed_kp_milli();
-    int kd_milli = runtime_config_speed_kd_milli();
-    int current_direction = 0;
-    int speed_control = 0;
-
-    xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    target_speed = motor->target_speed;
-    *pwm = motor->pwm;
-    current_direction = motor->direction;
-    *direction = current_direction;
-    speed_control = motor->speed_control ? 1 : 0;
-    xSemaphoreGive(motor_mutex);
-
-    if (!speed_control) {
-        *last_error = 0;
-        if (debug != NULL) {
-            debug->target_speed = target_speed;
-            debug->speed = speed;
-            debug->error = 0;
-            debug->base_pwm = 0;
-            debug->p_step = 0;
-            debug->d_step = 0;
-            debug->requested_pwm = *pwm * direction_to_sign(*direction);
-            debug->applied_pwm = *pwm;
-            debug->direction = *direction;
-            debug->kp_milli = kp_milli;
-            debug->kd_milli = kd_milli;
-        }
-        return;
+    if (max_speed_counts_per_sec <= 0 || max_pwm <= 0)
+    {
+        return set_motor(current_direction, 0);
     }
 
-    current_signed_pwm = *pwm * direction_to_sign(current_direction);
-    error = target_speed - speed;
-    d_error = error - *last_error;
-    normalized_d_error = (d_error * SPEED_D_BASE_DELAY_MS) / MOTOR_PID_DELAY_MS;
-    *last_error = error;
-
-    if (target_speed < 0) {
-        base_pwm_magnitude = speed_to_base_pwm(abs_int(target_speed));
-        base_pwm = -base_pwm_magnitude;
-    } else if (target_speed > 0) {
-        base_pwm_magnitude = speed_to_base_pwm(target_speed);
-        base_pwm = base_pwm_magnitude;
-    } else {
-        base_pwm = 0;
+    int clamped_speed = speed_counts_per_sec;
+    if (clamped_speed > max_speed_counts_per_sec)
+    {
+        clamped_speed = (int)max_speed_counts_per_sec;
+    }
+    if (clamped_speed < -max_speed_counts_per_sec)
+    {
+        clamped_speed = (int)-max_speed_counts_per_sec;
     }
 
-    p_step = (error * kp_milli) / 1000;
-    d_step = (normalized_d_error * kd_milli) / 1000;
-    requested_signed_pwm = base_pwm + p_step + d_step;
-    requested_signed_pwm = clamp_int(requested_signed_pwm,
-                                     -CONVEYOR_SPEED_PID_PWM_MAX,
-                                     CONVEYOR_SPEED_PID_PWM_MAX);
-    slew_signed_pwm_toward(&current_signed_pwm, requested_signed_pwm);
-    current_signed_pwm = clamp_int(current_signed_pwm,
-                                   -CONVEYOR_SPEED_PID_PWM_MAX,
-                                   CONVEYOR_SPEED_PID_PWM_MAX);
+    const int direction = clamped_speed == 0 ? current_direction :
+                          clamped_speed > 0 ? APP_AXIS_POSITIVE_DIR_LEVEL : APP_AXIS_NEGATIVE_DIR_LEVEL;
+    const int speed_magnitude = int_abs(clamped_speed);
+    const int pwm = (int)(((int64_t)speed_magnitude * max_pwm) / max_speed_counts_per_sec);
 
-    if (current_signed_pwm < 0) {
-        *direction = 0;
-        *pwm = -current_signed_pwm;
-    } else {
-        *direction = 1;
-        *pwm = current_signed_pwm;
-    }
-
-    if (debug != NULL) {
-        debug->target_speed = target_speed;
-        debug->speed = speed;
-        debug->error = error;
-        debug->base_pwm = base_pwm;
-        debug->p_step = p_step;
-        debug->d_step = d_step;
-        debug->requested_pwm = requested_signed_pwm;
-        debug->applied_pwm = *pwm;
-        debug->direction = *direction;
-        debug->kp_milli = kp_milli;
-        debug->kd_milli = kd_milli;
-    }
-
-    xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    motor->pwm = *pwm;
-    motor->direction = *direction;
-    xSemaphoreGive(motor_mutex);
+    return set_motor(direction, pwm);
 }
 
-static void apply_motor_output(motor_t *motor, int direction, int pwm)
+/* Initializes live PID gains from already-loaded runtime config values. */
+esp_err_t motor_pid_init(void)
 {
-    int rpwm = 0;
-    int lpwm = 0;
-
-    if (direction == 1) {
-        rpwm = pwm;
-    } else {
-        lpwm = pwm;
-    }
-
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, rpwm));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel));
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel, lpwm));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel));
+    return setk(config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI),
+                config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI),
+                config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI));
 }
 
+/* Sets the offset-corrected position target without changing control mode. */
+esp_err_t set_position(int target_position)
+{
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreTake(axis_mutex, portMAX_DELAY);
+    }
+
+    axis.target_position = target_position;
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreGive(axis_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Returns the latest offset-corrected position. */
+int get_position(void)
+{
+    int position = 0;
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreTake(axis_mutex, portMAX_DELAY);
+    }
+
+    position = axis.current_position;
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreGive(axis_mutex);
+    }
+
+    return position;
+}
+
+/* Updates the real-position offset and immediately republishes current_position. */
+esp_err_t set_offset(int position_offset)
+{
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreTake(axis_mutex, portMAX_DELAY);
+    }
+
+    axis.position_offset = position_offset;
+    axis.current_position = axis.encoder_count + axis.position_offset;
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreGive(axis_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Updates live PID gains. Persisting tuning values is handled outside PID. */
+esp_err_t setk(float kp, float ki, float kd)
+{
+    if (kp < 0.0f || ki < 0.0f || kd < 0.0f)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreTake(axis_mutex, portMAX_DELAY);
+    }
+
+    axis.kp = kp;
+    axis.ki = ki;
+    axis.kd = kd;
+
+    if (axis_mutex != NULL)
+    {
+        xSemaphoreGive(axis_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Runs position PID and writes speed-derived motor output through set_motor(). */
 void motor_pid_task(void *arg)
 {
-    motor_t *motor = (motor_t *)arg;
-    int count = 0;
-    int last_count = 0;
-    int raw_speed = 0;
-    int speed = 0;
-    int speed_samples[SPEED_AVG_SAMPLE_COUNT] = {0};
-    int speed_sample_index = 0;
-    int speed_sample_count = 0;
-    int speed_sample_sum = 0;
-    int last_error = 0;
-    int pwm = 0;
-    int direction = 0;
-    pid_debug_t debug = {0};
-    int watch_ticks = 0;
-    int watch_period_ticks = ENCODER_WATCH_DELAY_MS / MOTOR_PID_DELAY_MS;
+    (void)arg;
 
-    if (watch_period_ticks < 1) {
-        watch_period_ticks = 1;
-    }
+    while (true)
+    {
+        /* Read all shared inputs once so this loop iteration uses a consistent view. */
+        pid_snapshot_t snapshot = read_pid_snapshot();
+        int32_t max_pwm = 0;
+        int32_t max_speed_counts_per_sec = 0;
+        int32_t position_tolerance = 0;
 
-    ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &last_count));
-
-    while (1) {
-        ESP_ERROR_CHECK(pcnt_unit_get_count(motor->pcnt_unit, &count));
-        raw_speed = (((count - last_count) * 1000) / MOTOR_PID_DELAY_MS) * CONVEYOR_ENCODER_SPEED_SIGN;
-        last_count = count;
-
-        speed_sample_sum -= speed_samples[speed_sample_index];
-        speed_samples[speed_sample_index] = raw_speed;
-        speed_sample_sum += raw_speed;
-        if (speed_sample_count < SPEED_AVG_SAMPLE_COUNT) {
-            speed_sample_count++;
+        /* Runtime limits can change while the task runs, so refresh them each tick. */
+        (void)runtime_config_get(RUNTIME_CONFIG_MAX_PWM, &max_pwm);
+        (void)runtime_config_get(RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC, &max_speed_counts_per_sec);
+        (void)runtime_config_get(RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS, &position_tolerance);
+        if (max_pwm < 0)
+        {
+            max_pwm = 0;
         }
-        speed_sample_index++;
-        if (speed_sample_index >= SPEED_AVG_SAMPLE_COUNT) {
-            speed_sample_index = 0;
+        if (max_speed_counts_per_sec < 0)
+        {
+            max_speed_counts_per_sec = 0;
         }
-        speed = speed_sample_sum / speed_sample_count;
-
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        motor->position = count;
-        motor->current_speed = speed;
-        xSemaphoreGive(motor_mutex);
-
-        update_motor_speed_control(motor, speed, &last_error, &direction, &pwm, &debug);
-        apply_motor_output(motor, direction, pwm);
-
-        watch_ticks++;
-        if (watch_ticks >= watch_period_ticks) {
-            watch_ticks = 0;
-
-            if (encoder_watch_enabled && encoder_watch_motor == motor) {
-                console_printf("EVENT ENCODER %s %d %d\r\n", motor->name, count, speed);
-            }
-
-            if (pid_watch_enabled && pid_watch_motor == motor) {
-                console_printf("EVENT PID %s target=%d speed=%d error=%d base=%d p=%d d=%d requested=%d pwm=%d dir=%d kp=%d kd=%d\r\n",
-                               motor->name,
-                               debug.target_speed,
-                               debug.speed,
-                               debug.error,
-                               debug.base_pwm,
-                               debug.p_step,
-                               debug.d_step,
-                               debug.requested_pwm,
-                               debug.applied_pwm,
-                               debug.direction,
-                               debug.kp_milli,
-                               debug.kd_milli);
-            }
+        if (position_tolerance < 0)
+        {
+            position_tolerance = 0;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(MOTOR_PID_DELAY_MS));
+        if (!snapshot.position_control)
+        {
+            /* Manual mode sends signed target speed directly through the mapper. */
+            s_integral = 0.0f;
+            s_previous_error = 0.0f;
+            s_has_previous_error = false;
+
+            (void)set_motor_speed(snapshot.target_speed, snapshot.direction, max_speed_counts_per_sec, max_pwm);
+
+            vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+            continue;
+        }
+
+        const int error_counts = snapshot.target_position - snapshot.current_position;
+        if (int_abs(error_counts) <= position_tolerance)
+        {
+            /* We are within tolerance; hold PID state reset and command zero speed. */
+            s_integral = 0.0f;
+            s_previous_error = 0.0f;
+            s_has_previous_error = false;
+            (void)set_motor_speed(0, snapshot.direction, max_speed_counts_per_sec, max_pwm);
+            vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+            continue;
+        }
+
+        const float dt_seconds = (float)APP_AXIS_CONTROL_PERIOD_MS / 1000.0f;
+        const float error = (float)error_counts;
+        const float derivative = s_has_previous_error ? (error - s_previous_error) / dt_seconds : 0.0f;
+        /* Integrate error over time, then clamp to prevent windup at speed limits. */
+        s_integral = clamp_integral(s_integral + (error * dt_seconds), snapshot.ki, max_speed_counts_per_sec);
+
+        /* The PID result is signed speed in counts/sec; conversion happens in set_motor_speed(). */
+        const float speed_output = (snapshot.kp * error) + (snapshot.ki * s_integral) + (snapshot.kd * derivative);
+        int target_speed_counts_per_sec = clamp_speed(speed_output, max_speed_counts_per_sec);
+        if ((error_counts > 0 && target_speed_counts_per_sec < 0) ||
+            (error_counts < 0 && target_speed_counts_per_sec > 0))
+        {
+            target_speed_counts_per_sec = 0;
+        }
+
+        /* Convert signed speed to direction/PWM and retain error for derivative. */
+        (void)set_motor_speed(target_speed_counts_per_sec, snapshot.direction, max_speed_counts_per_sec, max_pwm);
+        s_previous_error = error;
+        s_has_previous_error = true;
+
+        vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
     }
 }

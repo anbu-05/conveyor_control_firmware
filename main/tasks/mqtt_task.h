@@ -1,14 +1,15 @@
-#ifndef MQTT_TASK_H
-#define MQTT_TASK_H
+#pragma once
 
-#include <stdbool.h>
+/*
+ * MQTT task public API.
+ * MQTT is deferred until local motion works; when enabled it will parse backend
+ * payloads into the same typed events used by console commands.
+ */
 
-#include "conveyor_job.h"
+#include "esp_err.h"
 
-void configure_mqtt(void);
-void mqtt_status_task(void *arg);
-bool mqtt_task_is_connected(void);
-void mqtt_publish_job_status(const conveyor_status_t *status);
-void mqtt_task_refresh_subscription(const char *old_topic, const char *new_topic);
+/* Initializes MQTT state; main.c starts mqtt_task() with xTaskCreate(). */
+esp_err_t mqtt_init(void);
 
-#endif
+/* Runs MQTT handling after main.c creates this task. */
+void mqtt_task(void *arg);

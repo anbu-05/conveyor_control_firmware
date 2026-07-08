@@ -1,42 +1,63 @@
-#ifndef RUNTIME_CONFIG_H
-#define RUNTIME_CONFIG_H
+#pragma once
 
-#include <stdbool.h>
+// Runtime config API. Values live in RAM and can be loaded from defaults or NVS.
+
 #include <stdint.h>
 
-void configure_runtime_config(void); /* Loads defaults, initializes NVS, then applies saved values. */
+#include "esp_err.h"
 
-int runtime_config_run_pwm(void); /* Direct-PWM debug value from run_pwm. */
-int runtime_config_run_speed_counts_per_sec(void); /* Job speed target from run_speed_counts_per_sec. */
-int runtime_config_speed_kp_milli(void); /* Speed P gain scaled by 1000. */
-int runtime_config_speed_kd_milli(void); /* Speed D gain scaled by 1000. */
-uint32_t runtime_config_done_hold_ms(void); /* DONE-state hold time before IDLE. */
-uint32_t runtime_config_tx_detect_timeout_ms(void); /* TX wait-for-S1-detect timeout. */
-uint32_t runtime_config_tx_clear_timeout_ms(void); /* TX wait-for-S1-clear timeout. */
-uint32_t runtime_config_rx_detect_timeout_ms(void); /* RX wait-for-S0-detect timeout. */
-uint32_t runtime_config_rx_done_timeout_ms(void); /* RX wait-for-S1-detect timeout. */
-uint32_t runtime_config_mqtt_status_period_ms(void); /* MQTT status publish period. */
+typedef enum {
+    RUNTIME_CONFIG_PID_KP_MILLI,
+    RUNTIME_CONFIG_PID_KI_MILLI,
+    RUNTIME_CONFIG_PID_KD_MILLI,
+    RUNTIME_CONFIG_MAX_PWM,
+    RUNTIME_CONFIG_MIN_START_PWM,
+    RUNTIME_CONFIG_REFERENCE_SPEED_COUNTS_PER_SEC,
+    RUNTIME_CONFIG_POSITIVE_SPEED_COUNTS_PER_SEC,
+    RUNTIME_CONFIG_NEGATIVE_SPEED_COUNTS_PER_SEC,
+    RUNTIME_CONFIG_SENSOR_SEEK_SPEED_COUNTS_PER_SEC,
+    RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC,
+    RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS,
+    RUNTIME_CONFIG_REFERENCE_TIMEOUT_MS,
+    RUNTIME_CONFIG_POSITIVE_TIMEOUT_MS,
+    RUNTIME_CONFIG_NEGATIVE_TIMEOUT_MS,
+    RUNTIME_CONFIG_STALL_CHECK_MS,
+    RUNTIME_CONFIG_STALL_MIN_DELTA_COUNTS,
+    RUNTIME_CONFIG_DIRECTION_CHECK_DELAY_MS,
+    RUNTIME_CONFIG_LIMIT_SWITCH_QUALIFY_MS,
+    RUNTIME_CONFIG_MQTT_STATUS_PERIOD_MS,
+    RUNTIME_CONFIG_COUNT,
+} runtime_config_key_t;
 
-bool runtime_config_get_value(const char *name, int32_t *value); /* Reads one runtime config value by serial key name. */
-bool runtime_config_value_is_valid(const char *name, int32_t value); /* Checks one runtime config value before saving. */
-bool runtime_config_set_value(const char *name, int32_t value); /* Saves one runtime config value to NVS and RAM. */
-bool runtime_config_get_string(const char *name, const char **value); /* Reads one string runtime config value by serial key name. */
-bool runtime_config_string_is_valid(const char *name, const char *value); /* Checks one string runtime config value before saving. */
-bool runtime_config_set_string(const char *name, const char *value); /* Saves one string runtime config value to NVS and RAM. */
-bool runtime_config_set_speed_kp_milli(int32_t value); /* Saves speed_kp_milli; used by the setkp command. */
-bool runtime_config_set_speed_kd_milli(int32_t value); /* Saves speed_kd_milli; used by the setkd command. */
-bool runtime_config_reset_speed_gains(void); /* Saves default speed_kp_milli and speed_kd_milli. */
-bool runtime_config_reset_defaults(void); /* Saves compile-time defaults back to NVS and RAM. */
-void runtime_config_print_all(void); /* Prints every runtime config value as CONFIG lines. */
+typedef struct {
+    int32_t pid_kp_milli;
+    int32_t pid_ki_milli;
+    int32_t pid_kd_milli;
+    int32_t max_pwm;
+    int32_t min_start_pwm;
+    int32_t reference_speed_counts_per_sec;
+    int32_t positive_speed_counts_per_sec;
+    int32_t negative_speed_counts_per_sec;
+    int32_t sensor_seek_speed_counts_per_sec;
+    int32_t max_speed_counts_per_sec;
+    int32_t position_tolerance_counts;
+    int32_t reference_timeout_ms;
+    int32_t positive_timeout_ms;
+    int32_t negative_timeout_ms;
+    int32_t stall_check_ms;
+    int32_t stall_min_delta_counts;
+    int32_t direction_check_delay_ms;
+    int32_t limit_switch_qualify_ms;
+    int32_t mqtt_status_period_ms;
+} runtime_config_t;
 
-const char *runtime_config_wifi_ssid(void);
-const char *runtime_config_wifi_pass(void);
-const char *runtime_config_conveyor_id(void);
-const char *runtime_config_mqtt_broker_uri(void);
-const char *runtime_config_mqtt_topic_cmd(void);
-const char *runtime_config_mqtt_topic_emergency(void);
-const char *runtime_config_mqtt_topic_feedback(void);
-const char *runtime_config_mqtt_topic_all_emergency(void);
-const char *runtime_config_mqtt_topic_tray(void);
+esp_err_t runtime_config_get(runtime_config_key_t key, int32_t *out_value);
+esp_err_t runtime_config_set(runtime_config_key_t key, int32_t value);
 
-#endif
+esp_err_t runtime_config_load_default(runtime_config_key_t key);
+esp_err_t runtime_config_load_nvs(runtime_config_key_t key);
+esp_err_t runtime_config_store_nvs(runtime_config_key_t key);
+
+void runtime_config_load_defaults(void);
+esp_err_t runtime_config_load_all_nvs(void);
+esp_err_t runtime_config_store_all_nvs(void);
