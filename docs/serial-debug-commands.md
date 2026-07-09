@@ -196,6 +196,36 @@ ERR BAD_ARGS
 ERR ESP_ERR_INVALID_ARG
 ```
 
+## `getsensors M0`
+
+Reads one motor's latest upstream/downstream sensor snapshot.
+
+Input:
+
+```text
+getsensors M0
+```
+
+Effect:
+
+- Reads `motors[].upstream_sensor` and `motors[].downstream_sensor`.
+- The hardware task updates these from the configured sensor GPIO levels.
+- `upstream` is the sensor on the feed/source side of conveyor flow.
+- `downstream` is the sensor on the discharge/destination side of conveyor flow.
+
+Success output:
+
+```text
+OK SENSORS motor=M0 upstream=1 downstream=0
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR ESP_ERR_NOT_FOUND
+```
+
 ## `setoffset M0 0`
 
 Sets the position offset for one motor.
@@ -425,21 +455,8 @@ pid_kp_milli
 pid_ki_milli
 pid_kd_milli
 max_pwm
-min_start_pwm
-reference_speed_counts_per_sec
-positive_speed_counts_per_sec
-negative_speed_counts_per_sec
-sensor_seek_speed_counts_per_sec
 max_speed_counts_per_sec
 position_tolerance_counts
-reference_timeout_ms
-positive_timeout_ms
-negative_timeout_ms
-stall_check_ms
-stall_min_delta_counts
-direction_check_delay_ms
-limit_switch_qualify_ms
-mqtt_status_period_ms
 ```
 
 PID gain config keys are stored as milli-units:

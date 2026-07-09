@@ -53,15 +53,15 @@ typedef struct {
     gpio_num_t len_gpio;
     gpio_num_t encoder_a_gpio;
     gpio_num_t encoder_b_gpio;
-    gpio_num_t positive_sensor_gpio;
-    gpio_num_t negative_sensor_gpio;
+    gpio_num_t upstream_sensor_gpio;
+    gpio_num_t downstream_sensor_gpio;
     ledc_channel_t rpwm_ledc_channel;
     ledc_channel_t lpwm_ledc_channel;
     pcnt_unit_handle_t pcnt_unit;
 
-    /* Direct GPIO levels from the two physical sensors. */
-    int positive_sensor;
-    int negative_sensor;
+    /* Direct GPIO levels from the two physical conveyor sensors. */
+    int upstream_sensor;
+    int downstream_sensor;
 } motor_t;
 
 extern SemaphoreHandle_t motor_mutex;

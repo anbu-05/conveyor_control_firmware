@@ -93,6 +93,11 @@ LEDC channels for `RPWM` and `LPWM`. `set_motor()` clears both PWM inputs before
 applying a new direction. Positive direction drives `RPWM`; negative direction
 drives `LPWM`. `stop_motor()` clears both PWM inputs.
 
+Hardware bring-up note: on the current conveyor wiring, `setmotor M0 64 1`
+drives motion that makes the encoder position decrease. Since the PID logic
+expects positive direction to increase position, the RPWM/LPWM direction mapping
+needs to be reversed before PID position tuning.
+
 ## Adding Runtime Config
 
 Runtime config uses enum keys internally. Console names live in `console.c`. To

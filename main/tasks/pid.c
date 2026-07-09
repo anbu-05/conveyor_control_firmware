@@ -53,6 +53,43 @@ static float config_gain_or_zero(runtime_config_key_t key)
     return (float)value / PID_GAIN_SCALE;
 }
 
+/* Applies validated live PID gains to one motor and clears old PID memory. */
+static esp_err_t apply_pid_gains(const char *motor_id, float kp, float ki, float kd)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || kp < 0.0f || ki < 0.0f || kd < 0.0f) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    motor->kp = kp;
+    motor->ki = ki;
+    motor->kd = kd;
+    motor->integral = 0.0f;
+    motor->previous_error = 0.0f;
+    motor->has_previous_error = false;
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
 /* Reads one motor's PID-relevant fields as a consistent snapshot. */
 static esp_err_t read_pid_snapshot(const char *motor_id, pid_snapshot_t *out_snapshot)
 {
@@ -198,14 +235,13 @@ static esp_err_t set_motor_speed(const char *motor_id,
     return set_motor(motor_id, pwm, direction);
 }
 
-/* Initializes one motor's live PID gains from already-loaded runtime config values. */
+/* Initializes one motor's live PID gains from flash-default runtime config values. */
 esp_err_t motor_pid_init(const char *motor_id)
 {
-    /* Reuse the public gain API so validation and mutex behavior stay centralized. */
-    return setk(motor_id,
-                config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI),
-                config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI),
-                config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI));
+    return apply_pid_gains(motor_id,
+                           config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI),
+                           config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI),
+                           config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI));
 }
 
 /* Sets one motor's offset-corrected position target without changing control mode. */
@@ -230,6 +266,13 @@ esp_err_t set_position(const char *motor_id, int target_position)
 
     if (motor_mutex != NULL) {
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    if (!motor->position_control) {
+        if (motor_mutex != NULL) {
+            xSemaphoreGive(motor_mutex);
+        }
+        return ESP_ERR_INVALID_STATE;
     }
 
     /* Publish intent; the PID task for this motor consumes it on its next tick. */
@@ -311,45 +354,6 @@ esp_err_t set_offset(const char *motor_id, int position_offset)
     return ESP_OK;
 }
 
-/* Updates one motor's live PID gains. Persisting tuning values is handled outside PID. */
-esp_err_t setk(const char *motor_id, float kp, float ki, float kd)
-{
-    motor_t *motor = NULL;
-
-    if (motor_id == NULL || kp < 0.0f || ki < 0.0f || kd < 0.0f) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    /* Find the motor whose live gain values should change. */
-    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-        if (strcmp(motors[i].id, motor_id) == 0) {
-            motor = &motors[i];
-            break;
-        }
-    }
-    if (motor == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (motor_mutex != NULL) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    }
-
-    /* Store live-only gains and reset PID memory to avoid mixing old tuning state. */
-    motor->kp = kp;
-    motor->ki = ki;
-    motor->kd = kd;
-    motor->integral = 0.0f;
-    motor->previous_error = 0.0f;
-    motor->has_previous_error = false;
-
-    if (motor_mutex != NULL) {
-        xSemaphoreGive(motor_mutex);
-    }
-
-    return ESP_OK;
-}
-
 /* Runs one motor's PID loop and writes speed-derived output through set_motor(). */
 void motor_pid_task(void *arg)
 {
@@ -372,7 +376,10 @@ void motor_pid_task(void *arg)
             continue;
         }
 
-        /* Runtime limits can change while the task runs, so refresh them each tick. */
+        /* Runtime config can change while the task runs, so refresh values each tick. */
+        snapshot.kp = config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI);
+        snapshot.ki = config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI);
+        snapshot.kd = config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI);
         (void)runtime_config_get(RUNTIME_CONFIG_MAX_PWM, &max_pwm);
         (void)runtime_config_get(RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC, &max_speed_counts_per_sec);
         (void)runtime_config_get(RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS, &position_tolerance);

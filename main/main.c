@@ -9,15 +9,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "nvs_flash.h"
 
 #include "config/config.h"
-#include "config/runtime_config.h"
 #include "shared/app_state.h"
 #include "statemachine/statemachine.h"
-#include "store/motor_store.h"
 #include "tasks/console.h"
 #include "tasks/hardware.h"
+#include "tasks/nvs.h"
 #include "tasks/pid.h"
 #include "tasks/mqtt.h"
 #include "tasks/safety.h"
@@ -49,20 +47,7 @@ static void log_if_error(const char *name, esp_err_t err)
 /* ESP-IDF entrypoint that initializes storage, config, hardware, and tasks. */
 void app_main(void)
 {
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
-
-    for (runtime_config_key_t key = 0; key < RUNTIME_CONFIG_COUNT; key++) {
-        err = runtime_config_load_nvs(key);
-        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
-            log_if_error("runtime_config_load_nvs", err);
-        }
-    }
-    log_if_error("motor_store_init", motor_store_init());
+    log_if_error("nvs_init", nvs_init());
     log_if_error("app_state_init", app_state_init());
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
         log_if_error("hardware_init", hardware_init(motors[i].id));

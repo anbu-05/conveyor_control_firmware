@@ -14,5 +14,5 @@
     "board/esp32s3-builtin.cfg"
   ],
   "idf.flashType": "JTAG",
-  "idf.port": "/dev/ttyACM1"
+  "idf.port": "/dev/ttyACM0"
 }

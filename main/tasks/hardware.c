@@ -170,7 +170,7 @@ esp_err_t hardware_encoder_init(const char *motor_id)
     return ESP_OK;
 }
 
-/* Sets up one motor's positive and negative physical sensor GPIO inputs. */
+/* Sets up one motor's upstream and downstream physical sensor GPIO inputs. */
 esp_err_t hardware_sensor_init(const char *motor_id)
 {
     motor_t *motor = NULL;
@@ -188,8 +188,8 @@ esp_err_t hardware_sensor_init(const char *motor_id)
 
     /* Configure the two physical sensor pins as direct GPIO inputs. */
     gpio_config_t sensor_gpio_config = {
-        .pin_bit_mask = (1ULL << motor->positive_sensor_gpio) |
-                        (1ULL << motor->negative_sensor_gpio),
+        .pin_bit_mask = (1ULL << motor->upstream_sensor_gpio) |
+                        (1ULL << motor->downstream_sensor_gpio),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -220,8 +220,8 @@ void hardware_task(void *arg)
             int encoder_count = 0;
 
             /* Sample GPIO levels outside the mutex so hardware reads stay short. */
-            const int positive_sensor = gpio_get_level(motors[i].positive_sensor_gpio);
-            const int negative_sensor = gpio_get_level(motors[i].negative_sensor_gpio);
+            const int upstream_sensor = gpio_get_level(motors[i].upstream_sensor_gpio);
+            const int downstream_sensor = gpio_get_level(motors[i].downstream_sensor_gpio);
 
             if (motor_mutex != NULL) {
                 xSemaphoreTake(motor_mutex, portMAX_DELAY);
@@ -234,8 +234,8 @@ void hardware_task(void *arg)
             }
 
             /* Store raw sensor GPIO levels for diagnostics and safety logic. */
-            motors[i].positive_sensor = positive_sensor;
-            motors[i].negative_sensor = negative_sensor;
+            motors[i].upstream_sensor = upstream_sensor;
+            motors[i].downstream_sensor = downstream_sensor;
 
             if (motor_mutex != NULL) {
                 xSemaphoreGive(motor_mutex);

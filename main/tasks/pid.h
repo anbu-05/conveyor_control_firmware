@@ -8,7 +8,7 @@
 
 #include "esp_err.h"
 
-/* Initializes one motor's PID gains from runtime config; main.c starts the task. */
+/* Initializes one motor's PID task state; main.c starts the task. */
 esp_err_t motor_pid_init(const char *motor_id);
 
 /* Runs the periodic position PID loop after main.c creates this task. */
@@ -23,5 +23,3 @@ esp_err_t get_position(const char *motor_id, int *out_position);
 /* Sets one motor's offset between encoder zero and the real motor position. */
 esp_err_t set_offset(const char *motor_id, int position_offset);
 
-/* Updates one motor's live PID gains; persistence remains owned by runtime_config. */
-esp_err_t setk(const char *motor_id, float kp, float ki, float kd);

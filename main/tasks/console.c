@@ -20,6 +20,7 @@
 #include "esp_console.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "linenoise/linenoise.h"
 #include "sdkconfig.h"
@@ -29,10 +30,6 @@
 
 #define CONSOLE_MAX_ARGS 8
 #define CONSOLE_MAX_LINE_LENGTH 256
-#define CONSOLE_PID_GAIN_SCALE 1000.0f
-#define CONSOLE_IS_PID_GAIN_KEY(key) ((key) == RUNTIME_CONFIG_PID_KP_MILLI || \
-                                      (key) == RUNTIME_CONFIG_PID_KI_MILLI || \
-                                      (key) == RUNTIME_CONFIG_PID_KD_MILLI)
 
 typedef enum {
     CONSOLE_COMMAND_SETMOTOR,
@@ -40,11 +37,12 @@ typedef enum {
     CONSOLE_COMMAND_STOPMOTOR,
     CONSOLE_COMMAND_SETPOSITION,
     CONSOLE_COMMAND_GETPOSITION,
+    CONSOLE_COMMAND_POSITIONCONTROL,
     CONSOLE_COMMAND_SETOFFSET,
-    CONSOLE_COMMAND_SETK,
     CONSOLE_COMMAND_GETCONFIG,
     CONSOLE_COMMAND_SETCONFIG,
     CONSOLE_COMMAND_RESETCONFIG,
+    CONSOLE_COMMAND_GETSENSORS,
     CONSOLE_COMMAND_STATUS,
 } console_command_id_t;
 
@@ -65,11 +63,12 @@ static const console_command_entry_t s_commands[] = {
     {"stopmotor", "Stop raw motor output: stopmotor <motor_id>", CONSOLE_COMMAND_STOPMOTOR},
     {"setposition", "Set PID target position: setposition <motor_id> <position>", CONSOLE_COMMAND_SETPOSITION},
     {"getposition", "Get current position: getposition <motor_id>", CONSOLE_COMMAND_GETPOSITION},
+    {"positioncontrol", "Enable or disable PID position control: positioncontrol <motor_id> <0|1>", CONSOLE_COMMAND_POSITIONCONTROL},
     {"setoffset", "Set position offset: setoffset <motor_id> <offset>", CONSOLE_COMMAND_SETOFFSET},
-    {"setk", "Set live PID gains: setk <motor_id> <kp> <ki> <kd>", CONSOLE_COMMAND_SETK},
     {"getconfig", "Read runtime config: getconfig [key]", CONSOLE_COMMAND_GETCONFIG},
-    {"setconfig", "Set and save runtime config: setconfig <key> <value>", CONSOLE_COMMAND_SETCONFIG},
-    {"resetconfig", "Reset and save runtime config: resetconfig <key>", CONSOLE_COMMAND_RESETCONFIG},
+    {"setconfig", "Set runtime config in RAM: setconfig <key> <value>", CONSOLE_COMMAND_SETCONFIG},
+    {"resetconfig", "Reset runtime config to flash default: resetconfig <key>", CONSOLE_COMMAND_RESETCONFIG},
+    {"getsensors", "Get current sensor states: getsensors <motor_id>", CONSOLE_COMMAND_GETSENSORS},
     {"status", "Show firmware, commands, and motors: status", CONSOLE_COMMAND_STATUS},
 };
 
@@ -78,21 +77,8 @@ static const console_runtime_config_entry_t s_runtime_configs[] = {
     {"pid_ki_milli", RUNTIME_CONFIG_PID_KI_MILLI},
     {"pid_kd_milli", RUNTIME_CONFIG_PID_KD_MILLI},
     {"max_pwm", RUNTIME_CONFIG_MAX_PWM},
-    {"min_start_pwm", RUNTIME_CONFIG_MIN_START_PWM},
-    {"reference_speed_counts_per_sec", RUNTIME_CONFIG_REFERENCE_SPEED_COUNTS_PER_SEC},
-    {"positive_speed_counts_per_sec", RUNTIME_CONFIG_POSITIVE_SPEED_COUNTS_PER_SEC},
-    {"negative_speed_counts_per_sec", RUNTIME_CONFIG_NEGATIVE_SPEED_COUNTS_PER_SEC},
-    {"sensor_seek_speed_counts_per_sec", RUNTIME_CONFIG_SENSOR_SEEK_SPEED_COUNTS_PER_SEC},
     {"max_speed_counts_per_sec", RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC},
     {"position_tolerance_counts", RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS},
-    {"reference_timeout_ms", RUNTIME_CONFIG_REFERENCE_TIMEOUT_MS},
-    {"positive_timeout_ms", RUNTIME_CONFIG_POSITIVE_TIMEOUT_MS},
-    {"negative_timeout_ms", RUNTIME_CONFIG_NEGATIVE_TIMEOUT_MS},
-    {"stall_check_ms", RUNTIME_CONFIG_STALL_CHECK_MS},
-    {"stall_min_delta_counts", RUNTIME_CONFIG_STALL_MIN_DELTA_COUNTS},
-    {"direction_check_delay_ms", RUNTIME_CONFIG_DIRECTION_CHECK_DELAY_MS},
-    {"limit_switch_qualify_ms", RUNTIME_CONFIG_LIMIT_SWITCH_QUALIFY_MS},
-    {"mqtt_status_period_ms", RUNTIME_CONFIG_MQTT_STATUS_PERIOD_MS},
 };
 
 /* Parses a base-10 integer argument and rejects partial or overflowing values. */
@@ -115,24 +101,40 @@ static bool parse_int_arg(const char *text, int *out_value)
     return true;
 }
 
-/* Parses a floating-point argument for live PID gain commands. */
-static bool parse_float_arg(const char *text, float *out_value)
+/* Resolves a console motor id to the shared motor array index. */
+static int find_motor_index(const char *motor_id)
 {
-    char *end = NULL;
-    float value = 0.0f;
-
-    if (text == NULL || out_value == NULL) {
-        return false;
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (motor_id != NULL && strcmp(motors[i].id, motor_id) == 0) {
+            return i;
+        }
     }
 
-    errno = 0;
-    value = strtof(text, &end);
-    if (errno != 0 || end == text || *end != '\0') {
-        return false;
+    return -1;
+}
+
+/* Enables/disables PID ownership for one motor from console commands. */
+static esp_err_t set_console_position_control(const char *motor_id, bool enabled)
+{
+    int motor_index = find_motor_index(motor_id);
+
+    if (motor_index < 0) {
+        return ESP_ERR_NOT_FOUND;
     }
 
-    *out_value = value;
-    return true;
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+    motors[motor_index].position_control = enabled;
+    motors[motor_index].target_position = motors[motor_index].current_position;
+    motors[motor_index].integral = 0.0f;
+    motors[motor_index].previous_error = 0.0f;
+    motors[motor_index].has_previous_error = false;
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
 }
 
 /* Handles every registered console command through one command table and switch. */
@@ -173,7 +175,10 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the parsed raw motor output to hardware.c. */
-        err = set_motor(argv[1], pwm, direction);
+        err = set_console_position_control(argv[1], false);
+        if (err == ESP_OK) {
+            err = set_motor(argv[1], pwm, direction);
+        }
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -190,6 +195,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+            (void)set_console_position_control(motors[i].id, false);
             /* Hand each configured motor id to hardware.c so all PWM outputs are cut. */
             stop_motor(motors[i].id);
         }
@@ -204,12 +210,19 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the stop request to hardware.c so PWM is cut immediately. */
+        err = set_console_position_control(argv[1], false);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
         stop_motor(argv[1]);
         printf("OK STOPMOTOR motor=%s\n", argv[1]);
         return 0;
 
     case CONSOLE_COMMAND_SETPOSITION: {
+        int motor_index = -1;
         int target_position = 0;
+        bool position_control = false;
 
         /* setposition publishes PID intent for the per-motor PID task. */
         /* Parse the target position string before calling the PID API. */
@@ -217,9 +230,30 @@ static int handle_console_command(int argc, char **argv)
             printf("ERR BAD_ARGS\n");
             return 0;
         }
+        motor_index = find_motor_index(argv[1]);
+        if (motor_index < 0) {
+            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+            return 0;
+        }
+
+        if (motor_mutex != NULL) {
+            xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        }
+        position_control = motors[motor_index].position_control;
+        if (motor_mutex != NULL) {
+            xSemaphoreGive(motor_mutex);
+        }
+        if (!position_control) {
+            printf("ERR POSITION_CONTROL_DISABLED\n");
+            return 0;
+        }
 
         /* Hand the parsed target position to pid.c. */
         err = set_position(argv[1], target_position);
+        if (err == ESP_ERR_INVALID_STATE) {
+            printf("ERR POSITION_CONTROL_DISABLED\n");
+            return 0;
+        }
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -249,6 +283,52 @@ static int handle_console_command(int argc, char **argv)
         return 0;
     }
 
+    case CONSOLE_COMMAND_POSITIONCONTROL: {
+        int enabled = 0;
+
+        if (argc != 3 || !parse_int_arg(argv[2], &enabled) || (enabled != 0 && enabled != 1)) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        err = set_console_position_control(argv[1], enabled != 0);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK POSITIONCONTROL motor=%s enabled=%d\n", argv[1], enabled);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_GETSENSORS: {
+        int motor_index = -1;
+        int upstream_sensor = 0;
+        int downstream_sensor = 0;
+
+        if (argc != 2) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+        motor_index = find_motor_index(argv[1]);
+        if (motor_index < 0) {
+            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+            return 0;
+        }
+
+        if (motor_mutex != NULL) {
+            xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        }
+        upstream_sensor = motors[motor_index].upstream_sensor;
+        downstream_sensor = motors[motor_index].downstream_sensor;
+        if (motor_mutex != NULL) {
+            xSemaphoreGive(motor_mutex);
+        }
+
+        printf("OK SENSORS motor=%s upstream=%d downstream=%d\n", argv[1], upstream_sensor, downstream_sensor);
+        return 0;
+    }
+
     case CONSOLE_COMMAND_SETOFFSET: {
         int offset = 0;
 
@@ -267,34 +347,6 @@ static int handle_console_command(int argc, char **argv)
         }
 
         printf("OK SETOFFSET motor=%s offset=%d\n", argv[1], offset);
-        return 0;
-    }
-
-    case CONSOLE_COMMAND_SETK: {
-        float kp = 0.0f;
-        float ki = 0.0f;
-        float kd = 0.0f;
-
-        /* setk updates live gains only; setconfig owns persisted gain values. */
-        if (argc != 5 ||
-            /* Parse kp before calling the live PID gain API. */
-            !parse_float_arg(argv[2], &kp) ||
-            /* Parse ki before calling the live PID gain API. */
-            !parse_float_arg(argv[3], &ki) ||
-            /* Parse kd before calling the live PID gain API. */
-            !parse_float_arg(argv[4], &kd)) {
-            printf("ERR BAD_ARGS\n");
-            return 0;
-        }
-
-        /* Hand the parsed live gains to pid.c. */
-        err = setk(argv[1], kp, ki, kd);
-        if (err != ESP_OK) {
-            printf("ERR %s\n", esp_err_to_name(err));
-            return 0;
-        }
-
-        printf("OK SETK motor=%s kp=%.3f ki=%.3f kd=%.3f\n", argv[1], kp, ki, kd);
         return 0;
     }
 
@@ -348,7 +400,7 @@ static int handle_console_command(int argc, char **argv)
         const char *config_name = NULL;
         int value = 0;
 
-        /* setconfig updates RAM, persists to NVS, and refreshes live PID gains if needed. */
+        /* setconfig updates RAM only; flash defaults remain compiled into runtime_config.c. */
         /* Parse the new config value before calling runtime_config.c. */
         if (argc != 3 || !parse_int_arg(argv[2], &value)) {
             printf("ERR BAD_ARGS\n");
@@ -368,39 +420,6 @@ static int handle_console_command(int argc, char **argv)
 
         /* Write the enum-keyed value into runtime_config.c RAM state. */
         err = runtime_config_set(key, value);
-        if (err == ESP_OK) {
-            /* Persist the same enum-keyed runtime config value to NVS. */
-            err = runtime_config_store_nvs(key);
-        }
-        if (err == ESP_OK && CONSOLE_IS_PID_GAIN_KEY(key)) {
-            int32_t kp_milli = 0;
-            int32_t ki_milli = 0;
-            int32_t kd_milli = 0;
-
-            /* PID gains are persisted as milli-units but consumed as live floats. */
-            /* Read persisted kp milli-units before refreshing live PID gains. */
-            err = runtime_config_get(RUNTIME_CONFIG_PID_KP_MILLI, &kp_milli);
-            if (err == ESP_OK) {
-                /* Read persisted ki milli-units before refreshing live PID gains. */
-                err = runtime_config_get(RUNTIME_CONFIG_PID_KI_MILLI, &ki_milli);
-            }
-            if (err == ESP_OK) {
-                /* Read persisted kd milli-units before refreshing live PID gains. */
-                err = runtime_config_get(RUNTIME_CONFIG_PID_KD_MILLI, &kd_milli);
-            }
-            if (err == ESP_OK) {
-                for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-                    /* Hand the refreshed persisted gains to each motor's PID state. */
-                    err = setk(motors[i].id,
-                               (float)kp_milli / CONSOLE_PID_GAIN_SCALE,
-                               (float)ki_milli / CONSOLE_PID_GAIN_SCALE,
-                               (float)kd_milli / CONSOLE_PID_GAIN_SCALE);
-                    if (err != ESP_OK) {
-                        break;
-                    }
-                }
-            }
-        }
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -414,7 +433,7 @@ static int handle_console_command(int argc, char **argv)
         runtime_config_key_t key = RUNTIME_CONFIG_COUNT;
         const char *config_name = NULL;
 
-        /* resetconfig resets one named runtime config and persists the default. */
+        /* resetconfig restores one named runtime config to its flash default in RAM. */
         if (argc != 2) {
             printf("ERR BAD_ARGS\n");
             return 0;
@@ -433,39 +452,6 @@ static int handle_console_command(int argc, char **argv)
 
         /* Reset the enum-keyed value in runtime_config.c RAM state. */
         err = runtime_config_reset(key);
-        if (err == ESP_OK) {
-            /* Persist the reset enum-keyed runtime config value to NVS. */
-            err = runtime_config_store_nvs(key);
-        }
-        if (err == ESP_OK && CONSOLE_IS_PID_GAIN_KEY(key)) {
-            int32_t kp_milli = 0;
-            int32_t ki_milli = 0;
-            int32_t kd_milli = 0;
-
-            /* Refresh live motor PID gains when persisted PID defaults change. */
-            /* Read reset kp milli-units before refreshing live PID gains. */
-            err = runtime_config_get(RUNTIME_CONFIG_PID_KP_MILLI, &kp_milli);
-            if (err == ESP_OK) {
-                /* Read reset ki milli-units before refreshing live PID gains. */
-                err = runtime_config_get(RUNTIME_CONFIG_PID_KI_MILLI, &ki_milli);
-            }
-            if (err == ESP_OK) {
-                /* Read reset kd milli-units before refreshing live PID gains. */
-                err = runtime_config_get(RUNTIME_CONFIG_PID_KD_MILLI, &kd_milli);
-            }
-            if (err == ESP_OK) {
-                for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-                    /* Hand the reset persisted gains to each motor's PID state. */
-                    err = setk(motors[i].id,
-                               (float)kp_milli / CONSOLE_PID_GAIN_SCALE,
-                               (float)ki_milli / CONSOLE_PID_GAIN_SCALE,
-                               (float)kd_milli / CONSOLE_PID_GAIN_SCALE);
-                    if (err != ESP_OK) {
-                        break;
-                    }
-                }
-            }
-        }
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
