@@ -4,7 +4,7 @@
  * State-machine public boundary.
  * Console, safety, and MQTT will submit typed events here; they must not call
  * transition functions directly because statemachine_task() serializes all
- * high-level axis state changes.
+ * high-level motor state changes.
  */
 
 #include <stdbool.h>
@@ -12,7 +12,7 @@
 #include "esp_err.h"
 
 /* Opaque until checkpoint 4 defines the typed command/fault event payload. */
-typedef struct axis_event axis_event_t;
+typedef struct motor_event motor_event_t;
 
 /* Initializes state-machine state; main.c starts statemachine_task() with xTaskCreate(). */
 esp_err_t statemachine_init(void);
@@ -28,4 +28,4 @@ void statemachine_task(void *arg);
  * not directly invoke reference/positive/negative transitions owned by
  * statemachine_task().
  */
-bool statemachine_send_event(const axis_event_t *event);
+bool statemachine_send_event(const motor_event_t *event);

@@ -47,13 +47,16 @@ typedef struct {
     bool has_previous_error;
 
     /* Pin and peripheral handles stay beside the runtime values they describe. */
-    gpio_num_t dir_gpio;
-    gpio_num_t pwm_gpio;
+    gpio_num_t rpwm_gpio;
+    gpio_num_t lpwm_gpio;
+    gpio_num_t ren_gpio;
+    gpio_num_t len_gpio;
     gpio_num_t encoder_a_gpio;
     gpio_num_t encoder_b_gpio;
     gpio_num_t positive_sensor_gpio;
     gpio_num_t negative_sensor_gpio;
-    ledc_channel_t pwm_ledc_channel;
+    ledc_channel_t rpwm_ledc_channel;
+    ledc_channel_t lpwm_ledc_channel;
     pcnt_unit_handle_t pcnt_unit;
 
     /* Direct GPIO levels from the two physical sensors. */

@@ -9,7 +9,7 @@ idf_component_register(
         "tasks/hardware.c"
         "tasks/pid.c"
         "tasks/safety.c"
-        "store/axis_store.c"
+        "store/motor_store.c"
     INCLUDE_DIRS
         "."
         "config"
@@ -17,5 +17,5 @@ idf_component_register(
         "statemachine"
         "tasks"
         "store"
-    REQUIRES nvs_flash esp_wifi esp_event esp_netif driver console
+    REQUIRES nvs_flash esp_wifi esp_event esp_netif esp_driver_gpio esp_driver_ledc esp_driver_pcnt esp_driver_usb_serial_jtag vfs console
 )

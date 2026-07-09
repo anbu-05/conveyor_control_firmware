@@ -51,12 +51,12 @@ Arguments:
 
 - `M0`: motor id.
 - `128`: PWM request. Runtime `max_pwm` and hardware limits clamp the applied value.
-- `0`: direction GPIO level. Must match one of the configured direction levels.
+- `0`: direction value. `1` drives BTS7960 `RPWM`; `0` drives BTS7960 `LPWM`.
 
 Effect:
 
 - Calls `set_motor("M0", 128, 0)`.
-- Applies PWM/direction immediately through GPIO/LEDC.
+- Applies PWM/direction immediately through the BTS7960 GPIO/LEDC outputs.
 - Stores the applied `pwm` and `direction` in `motors[]`.
 
 Success output:
@@ -72,6 +72,34 @@ ERR BAD_ARGS
 ERR ESP_ERR_INVALID_ARG
 ```
 
+## `stop`
+
+Cuts PWM for every configured motor.
+
+Input:
+
+```text
+stop
+```
+
+Effect:
+
+- Calls `stop_motor()` for every motor id in `motors[]`.
+- Clears both BTS7960 PWM inputs for each motor.
+- Stores `pwm = 0` in each motor entry.
+
+Success output:
+
+```text
+OK STOP motors=1
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+```
+
 ## `stopmotor M0`
 
 Cuts PWM for one motor.
@@ -85,7 +113,7 @@ stopmotor M0
 Effect:
 
 - Calls `stop_motor("M0")`.
-- Sets the LEDC duty to `0`.
+- Clears both BTS7960 PWM inputs.
 - Stores `pwm = 0` in `motors[]`.
 - Keeps the last direction value unchanged.
 
@@ -358,33 +386,34 @@ ERR BAD_CONFIG_KEY
 ERR ESP_ERR_INVALID_ARG
 ```
 
-## `resetconfig`
+## `status`
 
-Resets all runtime config values to compiled defaults.
+Prints firmware identity, available commands, and configured motor IDs.
 
 Input:
 
 ```text
-resetconfig
+status
 ```
 
 Effect:
 
-- Loads compiled defaults for every runtime config key.
-- Stores all defaults to NVS.
-- Applies PID gain defaults to all configured motors.
+- Prints the app/machine/MQTT/WiFi values from `main/config/config.h`.
+- Prints every registered console command and its argument format.
+- Prints every configured motor id.
 
-Success output:
+Success output includes lines like:
 
 ```text
-OK RESETCONFIG
+STATUS app_name=conveyor
+COMMAND setmotor - Set raw motor output: setmotor <motor_id> <pwm> <dir>
+MOTOR M0
 ```
 
 Error outputs:
 
 ```text
 ERR BAD_ARGS
-ERR ESP_ERR_INVALID_ARG
 ```
 
 ## Runtime Config Keys
@@ -424,6 +453,61 @@ pid_kd_milli 50 = live kd 0.050
 Changing or resetting a PID gain config key updates the live PID gains for all
 configured motors.
 
+## Adding Runtime Config
+
+Runtime config is defined by enum keys and a value/NVS table. Console command
+names are mapped in `main/tasks/console.c`.
+
+Add the enum key in `main/config/runtime_config.h` before
+`RUNTIME_CONFIG_COUNT`:
+
+```c
+RUNTIME_CONFIG_NEW_VALUE,
+```
+
+Add one table entry in `main/config/runtime_config.c`:
+
+```c
+[RUNTIME_CONFIG_NEW_VALUE] = {
+    .nvs_key = "new_val",
+    .default_value = 123,
+    .value = 123,
+},
+```
+
+Add one console mapping in `s_runtime_configs[]` in `main/tasks/console.c`:
+
+```c
+{"new_value", RUNTIME_CONFIG_NEW_VALUE},
+```
+
+That is enough for:
+
+- `getconfig new_value`
+- `setconfig new_value 456`
+- `resetconfig new_value`
+- NVS load/save
+- internal `runtime_config_get()` and `runtime_config_set()` calls
+
+Runtime config keys do not need separate console command handlers. The generic
+config command cases translate console strings to enum keys and then call the
+runtime config API.
+
+## Adding Console Commands
+
+Console commands are registered from `s_commands[]` in `main/tasks/console.c` by
+`register_console_commands()`. All commands dispatch through
+`handle_console_command()`.
+
+To add a command:
+
+1. Add a `console_command_id_t` enum value.
+2. Add one row to `s_commands[]` with the command name, help text, and id.
+3. Add one `case` in `handle_console_command()`.
+
+This keeps `console.c` small: parsing helpers, one handler, one registration
+function, init, and the task loop.
+
 ## Current Flow
 
 ```text
@@ -433,5 +517,5 @@ serial command
   -> motors[] shared state and/or GPIO/LEDC
 ```
 
-`setmotor` and `stopmotor` apply hardware output immediately. The hardware task
-only polls encoder and sensor feedback into `motors[]`.
+`setmotor`, `stop`, and `stopmotor` apply hardware output immediately. The
+hardware task only polls encoder and sensor feedback into `motors[]`.

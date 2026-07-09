@@ -12,6 +12,7 @@ be built on top of the same shared state and control APIs.
 Implemented:
 
 - ESP console task with serial debug commands.
+- BTS7960 motor driver output using RPWM/LPWM plus REN/LEN.
 - Runtime config defaults, NVS load, NVS save, and serial config commands.
 - Shared `motor_t motors[]` state with string motor IDs like `M0`.
 - Hardware task for encoder and sensor polling.
@@ -76,6 +77,67 @@ flowchart TD
 - `main/config/runtime_config.c`: RAM/NVS runtime config values.
 - `main/config/config.h`: compile-time identity, pin, and timing defaults.
 
+## BTS7960 Motor Driver
+
+Motor output is configured for a BTS7960 H-bridge driver in `main/config/config.h`:
+
+```c
+MOTOR_RPWM_GPIO = GPIO_NUM_15
+MOTOR_LPWM_GPIO = GPIO_NUM_16
+MOTOR_REN_GPIO = GPIO_NUM_7
+MOTOR_LEN_GPIO = GPIO_NUM_8
+```
+
+`hardware_motor_init()` enables both `REN` and `LEN`, then configures separate
+LEDC channels for `RPWM` and `LPWM`. `set_motor()` clears both PWM inputs before
+applying a new direction. Positive direction drives `RPWM`; negative direction
+drives `LPWM`. `stop_motor()` clears both PWM inputs.
+
+## Adding Runtime Config
+
+Runtime config uses enum keys internally. Console names live in `console.c`. To
+add a new value:
+
+1. Add a key before `RUNTIME_CONFIG_COUNT` in `main/config/runtime_config.h`.
+2. Add the matching value/NVS table entry in `main/config/runtime_config.c`.
+3. Add the console name mapping in `s_runtime_configs[]` in `main/tasks/console.c`.
+
+Example:
+
+```c
+RUNTIME_CONFIG_NEW_VALUE,
+```
+
+```c
+[RUNTIME_CONFIG_NEW_VALUE] = {
+    .nvs_key = "new_val",
+    .default_value = 123,
+    .value = 123,
+},
+```
+
+```c
+{"new_value", RUNTIME_CONFIG_NEW_VALUE},
+```
+
+After that, `getconfig`, `setconfig`, `resetconfig`, NVS load/save, and internal
+`runtime_config_get()` / `runtime_config_set()` access work through the enum key.
+
+## Adding Console Commands
+
+Console commands are registered from one table in `main/tasks/console.c` by
+`register_console_commands()` and handled by one switch in
+`handle_console_command()`.
+
+To add a command:
+
+1. Add a value to `console_command_id_t`.
+2. Add one row to `s_commands[]` with the command name, help text, and id.
+3. Add one `case` in `handle_console_command()`.
+
+Keep command behavior in that one handler unless the logic grows enough to
+deserve its own module-level API.
+
 ## Serial Debug Commands
 
 Current serial commands are documented in:
@@ -88,6 +150,7 @@ Examples:
 
 ```text
 setmotor M0 128 0
+stop
 stopmotor M0
 setposition M0 1200
 getposition M0
@@ -96,6 +159,7 @@ setk M0 0.500 0.000 0.050
 getconfig
 setconfig max_pwm 200
 resetconfig max_pwm
+status
 ```
 
 ## Build

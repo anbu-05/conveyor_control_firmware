@@ -1,6 +1,6 @@
 #pragma once
 
-// Runtime config API. Values live in RAM and can be loaded from defaults or NVS.
+// Runtime config API. Callers use enum keys; console string parsing lives in console.c.
 
 #include <stdint.h>
 
@@ -29,35 +29,9 @@ typedef enum {
     RUNTIME_CONFIG_COUNT,
 } runtime_config_key_t;
 
-typedef struct {
-    int32_t pid_kp_milli;
-    int32_t pid_ki_milli;
-    int32_t pid_kd_milli;
-    int32_t max_pwm;
-    int32_t min_start_pwm;
-    int32_t reference_speed_counts_per_sec;
-    int32_t positive_speed_counts_per_sec;
-    int32_t negative_speed_counts_per_sec;
-    int32_t sensor_seek_speed_counts_per_sec;
-    int32_t max_speed_counts_per_sec;
-    int32_t position_tolerance_counts;
-    int32_t reference_timeout_ms;
-    int32_t positive_timeout_ms;
-    int32_t negative_timeout_ms;
-    int32_t stall_check_ms;
-    int32_t stall_min_delta_counts;
-    int32_t direction_check_delay_ms;
-    int32_t limit_switch_qualify_ms;
-    int32_t mqtt_status_period_ms;
-} runtime_config_t;
-
 esp_err_t runtime_config_get(runtime_config_key_t key, int32_t *out_value);
 esp_err_t runtime_config_set(runtime_config_key_t key, int32_t value);
+esp_err_t runtime_config_reset(runtime_config_key_t key);
 
-esp_err_t runtime_config_load_default(runtime_config_key_t key);
 esp_err_t runtime_config_load_nvs(runtime_config_key_t key);
 esp_err_t runtime_config_store_nvs(runtime_config_key_t key);
-
-void runtime_config_load_defaults(void);
-esp_err_t runtime_config_load_all_nvs(void);
-esp_err_t runtime_config_store_all_nvs(void);

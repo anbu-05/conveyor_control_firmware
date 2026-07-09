@@ -191,7 +191,7 @@ static esp_err_t set_motor_speed(const char *motor_id,
 
     /* Positive speed maps to positive direction; zero preserves current direction. */
     const int direction = clamped_speed == 0 ? current_direction :
-                          clamped_speed > 0 ? APP_AXIS_POSITIVE_DIR_LEVEL : APP_AXIS_NEGATIVE_DIR_LEVEL;
+                          clamped_speed > 0 ? APP_MOTOR_POSITIVE_DIR_LEVEL : APP_MOTOR_NEGATIVE_DIR_LEVEL;
     const int speed_magnitude = int_abs(clamped_speed);
     const int pwm = (int)(((int64_t)speed_magnitude * max_pwm) / max_speed_counts_per_sec);
 
@@ -368,7 +368,7 @@ void motor_pid_task(void *arg)
 
         /* Read all shared inputs once so this loop iteration uses a consistent view. */
         if (read_pid_snapshot(motor_id, &snapshot) != ESP_OK) {
-            vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
             continue;
         }
 
@@ -390,7 +390,7 @@ void motor_pid_task(void *arg)
             /* Manual/raw mode leaves motor output to explicit hardware API calls. */
             (void)write_pid_memory(motor_id, 0.0f, 0.0f, false);
 
-            vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
             continue;
         }
 
@@ -399,11 +399,11 @@ void motor_pid_task(void *arg)
             /* We are within tolerance; reset PID memory and command zero speed. */
             (void)write_pid_memory(motor_id, 0.0f, 0.0f, false);
             (void)set_motor_speed(motor_id, 0, snapshot.direction, max_speed_counts_per_sec, max_pwm);
-            vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
             continue;
         }
 
-        const float dt_seconds = (float)APP_AXIS_CONTROL_PERIOD_MS / 1000.0f;
+        const float dt_seconds = (float)APP_MOTOR_CONTROL_PERIOD_MS / 1000.0f;
         const float error = (float)error_counts;
         const float derivative = snapshot.has_previous_error ?
                                  (error - snapshot.previous_error) / dt_seconds : 0.0f;
@@ -428,6 +428,6 @@ void motor_pid_task(void *arg)
                               max_speed_counts_per_sec, max_pwm);
         (void)write_pid_memory(motor_id, integral, error, true);
 
-        vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
     }
 }

@@ -25,7 +25,7 @@
 #define HARDWARE_PWM_MAX_DUTY 255
 #define HARDWARE_PWM_RESOLUTION LEDC_TIMER_8_BIT
 
-/* Sets up the direction GPIO and LEDC PWM channel for one motor driver. */
+/* Sets up BTS7960 enable GPIOs and paired LEDC PWM channels for one motor driver. */
 esp_err_t hardware_motor_init(const char *motor_id)
 {
     motor_t *motor = NULL;
@@ -41,9 +41,9 @@ esp_err_t hardware_motor_init(const char *motor_id)
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* Configure the direction pin as a plain output for this motor. */
-    gpio_config_t direction_gpio_config = {
-        .pin_bit_mask = 1ULL << motor->dir_gpio,
+    /* Configure both BTS7960 enable pins as plain outputs for this motor. */
+    gpio_config_t enable_gpio_config = {
+        .pin_bit_mask = (1ULL << motor->ren_gpio) | (1ULL << motor->len_gpio),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -55,25 +55,34 @@ esp_err_t hardware_motor_init(const char *motor_id)
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .timer_num = LEDC_TIMER_0,
         .duty_resolution = HARDWARE_PWM_RESOLUTION,
-        .freq_hz = APP_AXIS_PWM_FREQ_HZ,
+        .freq_hz = APP_MOTOR_PWM_FREQ_HZ,
         .clk_cfg = LEDC_AUTO_CLK,
     };
 
-    /* Route the selected LEDC channel to this motor's PWM pin. */
-    ledc_channel_config_t pwm_channel = {
-        .gpio_num = motor->pwm_gpio,
+    /* Route one LEDC channel to each BTS7960 PWM input. */
+    ledc_channel_config_t rpwm_channel = {
+        .gpio_num = motor->rpwm_gpio,
         .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = motor->pwm_ledc_channel,
+        .channel = motor->rpwm_ledc_channel,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    ledc_channel_config_t lpwm_channel = {
+        .gpio_num = motor->lpwm_gpio,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = motor->lpwm_ledc_channel,
         .timer_sel = LEDC_TIMER_0,
         .duty = 0,
         .hpoint = 0,
     };
 
-    ESP_RETURN_ON_ERROR(gpio_config(&direction_gpio_config), "hardware", "configure direction gpio");
-    ESP_RETURN_ON_ERROR(gpio_set_level(motor->dir_gpio, APP_AXIS_NEGATIVE_DIR_LEVEL),
-                        "hardware", "set default direction");
+    ESP_RETURN_ON_ERROR(gpio_config(&enable_gpio_config), "hardware", "configure bts7960 enable gpio");
+    ESP_RETURN_ON_ERROR(gpio_set_level(motor->ren_gpio, 1), "hardware", "enable bts7960 right side");
+    ESP_RETURN_ON_ERROR(gpio_set_level(motor->len_gpio, 1), "hardware", "enable bts7960 left side");
     ESP_RETURN_ON_ERROR(ledc_timer_config(&ledc_timer), "hardware", "configure ledc timer");
-    ESP_RETURN_ON_ERROR(ledc_channel_config(&pwm_channel), "hardware", "configure pwm channel");
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&rpwm_channel), "hardware", "configure rpwm channel");
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&lpwm_channel), "hardware", "configure lpwm channel");
     stop_motor(motor_id);
     return ESP_OK;
 }
@@ -233,11 +242,11 @@ void hardware_task(void *arg)
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(APP_AXIS_CONTROL_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
     }
 }
 
-/* Sets one motor direction and PWM; direction is a plain int matching config levels. */
+/* Sets one BTS7960 direction and PWM; only one side receives duty at a time. */
 esp_err_t set_motor(const char *motor_id, int pwm, int direction)
 {
     motor_t *motor = NULL;
@@ -271,20 +280,30 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
     }
 
     /* Reject directions outside the configured electrical levels. */
-    if (direction != APP_AXIS_NEGATIVE_DIR_LEVEL && direction != APP_AXIS_POSITIVE_DIR_LEVEL) {
+    if (direction != APP_MOTOR_NEGATIVE_DIR_LEVEL && direction != APP_MOTOR_POSITIVE_DIR_LEVEL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* Force PWM to zero before direction changes to avoid hard reversals. */
-    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel, 0),
-                        "hardware", "clear pwm before direction");
-    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel),
-                        "hardware", "apply pwm clear");
-    ESP_RETURN_ON_ERROR(gpio_set_level(motor->dir_gpio, direction), "hardware", "set motor direction");
-    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel, duty),
-                        "hardware", "set pwm duty");
-    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel),
-                        "hardware", "apply pwm duty");
+    /* Clear both sides before applying direction to avoid hard reversals. */
+    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, 0),
+                        "hardware", "clear rpwm before direction");
+    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel, 0),
+                        "hardware", "clear lpwm before direction");
+    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel),
+                        "hardware", "apply rpwm clear");
+    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel),
+                        "hardware", "apply lpwm clear");
+    if (direction == APP_MOTOR_POSITIVE_DIR_LEVEL) {
+        ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, duty),
+                            "hardware", "set rpwm duty");
+        ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel),
+                            "hardware", "apply rpwm duty");
+    } else {
+        ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel, duty),
+                            "hardware", "set lpwm duty");
+        ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel),
+                            "hardware", "apply lpwm duty");
+    }
 
     if (motor_mutex != NULL) {
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
@@ -300,7 +319,7 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
     return ESP_OK;
 }
 
-/* Stops one motor by cutting PWM while preserving the last direction value. */
+/* Stops one motor by cutting both BTS7960 PWM inputs while preserving the last direction value. */
 void stop_motor(const char *motor_id)
 {
     motor_t *motor = NULL;
@@ -316,9 +335,11 @@ void stop_motor(const char *motor_id)
         return;
     }
 
-    /* Cut the hardware duty immediately before updating shared state. */
-    (void)ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel, 0);
-    (void)ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->pwm_ledc_channel);
+    /* Cut both hardware duties immediately before updating shared state. */
+    (void)ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, 0);
+    (void)ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel, 0);
+    (void)ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel);
+    (void)ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel);
 
     if (motor_mutex != NULL) {
         xSemaphoreTake(motor_mutex, portMAX_DELAY);

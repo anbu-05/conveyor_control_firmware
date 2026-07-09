@@ -2,41 +2,47 @@
 
 // Compile-time machine config. Runtime-tunable config lives in runtime_config.c.
 
-// Application identity. Change these values to retarget the generic axis firmware.
-#define APP_AXIS_APP_NAME "cnc"
+#include "driver/gpio.h"
+
+// Application identity. Change these values to retarget the generic motor firmware.
+#define APP_MOTOR_APP_NAME "conveyor"
 // Machine id used in console, MQTT topics, and persisted ownership.
-#define APP_AXIS_MACHINE_ID "cnc2"
+#define APP_MOTOR_MACHINE_ID "C1"
 // MQTT client id can diverge from machine id later if needed.
-#define APP_AXIS_MQTT_CLIENT_ID "cnc2"
+#define APP_MOTOR_MQTT_CLIENT_ID "factory"
 // Topic segment for factory/<machine_id>/<topic_name> topics.
-#define APP_AXIS_TOPIC_NAME "cnc"
+#define APP_MOTOR_TOPIC_NAME "command"
 // WiFi SSID for the later MQTT checkpoint.
-#define APP_AXIS_WIFI_SSID "thrd_warehouse"
+#define APP_MOTOR_WIFI_SSID "thrd_warehouse"
 // WiFi password for the configured machine network.
-#define APP_AXIS_WIFI_PASS "thrd@789"
+#define APP_MOTOR_WIFI_PASS "thrd@789"
 // Broker URI for factory/<machine_id>/<topic_name> topics.
-#define APP_AXIS_MQTT_URI "mqtt://192.168.1.183"
+#define APP_MOTOR_MQTT_URI "mqtt://192.168.1.183"
 
-// Direction GPIO driven before PWM is applied.
-#define APP_AXIS_DIR_PIN 17
-// LEDC PWM output pin for motor speed.
-#define APP_AXIS_PWM_PIN 18
+// BTS7960 right/forward PWM input.
+#define MOTOR_RPWM_GPIO GPIO_NUM_15
+// BTS7960 left/reverse PWM input.
+#define MOTOR_LPWM_GPIO GPIO_NUM_16
+// BTS7960 right enable pin.
+#define MOTOR_REN_GPIO GPIO_NUM_7
+// BTS7960 left enable pin.
+#define MOTOR_LEN_GPIO GPIO_NUM_8
 // Positive-travel sensor GPIO.
-#define APP_AXIS_POSITIVE_SENSOR_PIN 40
+#define APP_MOTOR_POSITIVE_SENSOR_PIN 40
 // Negative-travel sensor GPIO, commonly used as a reference point.
-#define APP_AXIS_NEGATIVE_SENSOR_PIN 39
+#define APP_MOTOR_NEGATIVE_SENSOR_PIN 39
 // Electrical level that means a physical sensor is active.
-#define APP_AXIS_SENSOR_ACTIVE_LEVEL 1
+#define APP_MOTOR_SENSOR_ACTIVE_LEVEL 1
 // PCNT quadrature channel A input.
-#define APP_AXIS_ENCODER_A_PIN 5
+#define APP_MOTOR_ENCODER_A_PIN 5
 // PCNT quadrature channel B input.
-#define APP_AXIS_ENCODER_B_PIN 4
+#define APP_MOTOR_ENCODER_B_PIN 4
 
-// Direction GPIO level for positive travel.
-#define APP_AXIS_POSITIVE_DIR_LEVEL 1
-// Direction GPIO level for negative travel.
-#define APP_AXIS_NEGATIVE_DIR_LEVEL 0
+// Console/API direction value for positive travel.
+#define APP_MOTOR_POSITIVE_DIR_LEVEL 1
+// Console/API direction value for negative travel.
+#define APP_MOTOR_NEGATIVE_DIR_LEVEL 0
 // LEDC PWM frequency for smooth motor drive.
-#define APP_AXIS_PWM_FREQ_HZ 5000
+#define APP_MOTOR_PWM_FREQ_HZ 5000
 // PID/control loop period in milliseconds.
-#define APP_AXIS_CONTROL_PERIOD_MS 10
+#define APP_MOTOR_CONTROL_PERIOD_MS 10

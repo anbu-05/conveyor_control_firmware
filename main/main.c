@@ -15,14 +15,14 @@
 #include "config/runtime_config.h"
 #include "shared/app_state.h"
 #include "statemachine/statemachine.h"
-#include "store/axis_store.h"
+#include "store/motor_store.h"
 #include "tasks/console.h"
 #include "tasks/hardware.h"
 #include "tasks/pid.h"
 #include "tasks/mqtt.h"
 #include "tasks/safety.h"
 
-static const char *TAG = APP_AXIS_APP_NAME;
+static const char *TAG = APP_MOTOR_APP_NAME;
 
 #define HARDWARE_TASK_STACK_SIZE 3072
 #define MOTOR_PID_TASK_STACK_SIZE 4096
@@ -56,9 +56,13 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
 
-    runtime_config_load_defaults();
-    log_if_error("runtime_config_load_all_nvs", runtime_config_load_all_nvs());
-    log_if_error("axis_store_init", axis_store_init());
+    for (runtime_config_key_t key = 0; key < RUNTIME_CONFIG_COUNT; key++) {
+        err = runtime_config_load_nvs(key);
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+            log_if_error("runtime_config_load_nvs", err);
+        }
+    }
+    log_if_error("motor_store_init", motor_store_init());
     log_if_error("app_state_init", app_state_init());
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
         log_if_error("hardware_init", hardware_init(motors[i].id));
