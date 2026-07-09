@@ -3,9 +3,9 @@
 ESP-IDF firmware for an ESP32-S3 motor-control node.
 
 The current implementation is focused on local serial debugging, motor hardware
-control, encoder/sensor polling, runtime config, and per-motor PID task
-ownership. MQTT and the state machine are present as module placeholders and will
-be built on top of the same shared state and control APIs.
+control, encoder/sensor polling, runtime config, per-motor PID task ownership,
+and receive/transmit tray state-machine jobs. MQTT is present as a module
+placeholder and will be built on top of the same shared state and control APIs.
 
 ## Current Status
 
@@ -19,10 +19,10 @@ Implemented:
 - Raw motor output APIs: `set_motor()` and `stop_motor()`.
 - One PID task per configured motor.
 - PID APIs: `set_position()`, `get_position()`, `set_offset()`, and `setk()`.
+- Conveyor state-machine APIs: `statemachine_jobrx()`, `statemachine_jobtx()`, and `statemachine_get_status()`.
 
 In progress / placeholders:
 
-- State machine behavior.
 - MQTT command handling.
 - Safety behavior.
 
@@ -65,6 +65,40 @@ flowchart TD
     B    ---> |control\n statemachine| H
 ```
 
+## State Machine
+
+Receive jobs move an incoming tray from the downstream sensor to the upstream
+sensor. `statemachine_jobrx()` blocks until the job completes and returns the
+terminal result.
+
+```mermaid
+flowchart TD
+    A[IDLE]
+    B[WAITING FOR TRAY]
+    C[MOVING TRAY]
+    D[TRAY REACHED END]
+
+    A --> |jobrx received<br/>and tray is not present| B
+    B --> |tray detected on downstream sensor| C
+    C --> |tray detected on upstream sensor| D
+    D --> |send acknowledgement| A
+```
+
+Transmit jobs push a present tray upstream toward the next conveyor.
+`statemachine_jobtx()` blocks until the job completes and returns the terminal
+result.
+
+```mermaid
+flowchart TD
+    A[IDLE]
+    B[TRANSMITTING TRAY]
+    C[TRAY REACHED END]
+
+    A --> |jobtx received<br/>and tray is present| B
+    B --> |tray not detected on upstream sensor anymore| C
+    C --> A
+```
+
 ## Main Modules
 
 - `main/tasks/console.c`: ESP console command registration and serial command loop.
@@ -72,7 +106,7 @@ flowchart TD
 - `main/tasks/pid.c`: per-motor PID task and PID-facing public APIs.
 - `main/tasks/mqtt.c`: MQTT placeholder task.
 - `main/tasks/safety.c`: safety placeholder task.
-- `main/statemachine/statemachine.c`: state machine placeholder task.
+- `main/statemachine/statemachine.c`: receive/transmit tray state-machine task.
 - `main/shared/app_state.c`: shared `motors[]` state and mutex.
 - `main/config/runtime_config.c`: RAM/NVS runtime config values.
 - `main/config/config.h`: compile-time identity, pin, and timing defaults.
@@ -164,6 +198,9 @@ setk M0 0.500 0.000 0.050
 getconfig
 setconfig max_pwm 200
 resetconfig max_pwm
+jobrx
+jobtx
+getstatus
 status
 ```
 
