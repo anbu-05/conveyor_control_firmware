@@ -2,17 +2,35 @@
 
 /*
  * State-machine public boundary.
- * Console, safety, and MQTT will submit typed events here; they must not call
- * transition functions directly because statemachine_task() serializes all
- * high-level motor state changes.
+ * Console, safety, and MQTT submit tray jobs here; they must not call internal
+ * transition code because statemachine_task() serializes conveyor behavior.
+ * statemachine_jobrx() and statemachine_jobtx() block until completion; do not
+ * call them from statemachine_task().
  */
-
-#include <stdbool.h>
 
 #include "esp_err.h"
 
-/* Opaque until checkpoint 4 defines the typed command/fault event payload. */
-typedef struct motor_event motor_event_t;
+typedef enum {
+    STATEMACHINE_RESULT_RX_DONE,
+    STATEMACHINE_RESULT_TX_DONE,
+    STATEMACHINE_RESULT_TRAY_ALREADY_PRESENT,
+    STATEMACHINE_RESULT_TRAY_NOT_RECEIVED,
+    STATEMACHINE_RESULT_TRAY_TRANSFER_STUCK,
+    STATEMACHINE_RESULT_NO_TRAY_PRESENT,
+    STATEMACHINE_RESULT_TRAY_HANDOFF_STUCK,
+    STATEMACHINE_RESULT_EMERGENCY_STOP,
+    STATEMACHINE_RESULT_JOB_TIMEOUT,
+    STATEMACHINE_RESULT_JOB_REJECTED,
+} statemachine_result_t;
+
+typedef enum {
+    STATEMACHINE_STATUS_IDLE,
+    STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY,
+    STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY,
+    STATEMACHINE_STATUS_RECEIVE_TRAY_RECEIVED,
+    STATEMACHINE_STATUS_TRANSMIT_TRANSMITTING_TRAY,
+    STATEMACHINE_STATUS_TRANSMIT_TRAY_HANDED_OFF,
+} statemachine_status_t;
 
 /* Initializes state-machine state; main.c starts statemachine_task() with xTaskCreate(). */
 esp_err_t statemachine_init(void);
@@ -23,9 +41,11 @@ esp_err_t statemachine_init(void);
  */
 void statemachine_task(void *arg);
 
-/*
- * Named statemachine_send_event() because producers enqueue requests; they do
- * not directly invoke reference/positive/negative transitions owned by
- * statemachine_task().
- */
-bool statemachine_send_event(const motor_event_t *event);
+/* Queues one receive job and blocks until statemachine_task() returns its result. */
+statemachine_result_t statemachine_jobrx(void);
+
+/* Queues one transmit job and blocks until statemachine_task() returns its result. */
+statemachine_result_t statemachine_jobtx(void);
+
+/* Returns the current state-machine status for polling live progress. */
+statemachine_status_t statemachine_get_status(void);

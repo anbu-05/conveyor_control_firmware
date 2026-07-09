@@ -42,6 +42,10 @@
 #define APP_MOTOR_POSITIVE_DIR_LEVEL 1
 // Console/API direction value for negative travel.
 #define APP_MOTOR_NEGATIVE_DIR_LEVEL 0
+// Conveyor movement level that drives trays toward the upstream side.
+#define APP_MOTOR_UPSTREAM_DIRECTION_LEVEL APP_MOTOR_POSITIVE_DIR_LEVEL
+// Conveyor movement level that drives trays toward the downstream side.
+#define APP_MOTOR_DOWNSTREAM_DIRECTION_LEVEL APP_MOTOR_NEGATIVE_DIR_LEVEL
 // LEDC PWM frequency for smooth motor drive.
 #define APP_MOTOR_PWM_FREQ_HZ 5000
 // PID/control loop period in milliseconds.

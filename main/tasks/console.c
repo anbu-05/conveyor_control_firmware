@@ -25,6 +25,7 @@
 #include "linenoise/linenoise.h"
 #include "sdkconfig.h"
 #include "shared/app_state.h"
+#include "statemachine/statemachine.h"
 #include "tasks/hardware.h"
 #include "tasks/pid.h"
 
@@ -33,6 +34,9 @@
 
 typedef enum {
     CONSOLE_COMMAND_SETMOTOR,
+    CONSOLE_COMMAND_JOBRX,
+    CONSOLE_COMMAND_JOBTX,
+    CONSOLE_COMMAND_GETSTATUS,
     CONSOLE_COMMAND_STOP,
     CONSOLE_COMMAND_STOPMOTOR,
     CONSOLE_COMMAND_SETPOSITION,
@@ -58,7 +62,10 @@ typedef struct {
 } console_runtime_config_entry_t;
 
 static const console_command_entry_t s_commands[] = {
-    {"setmotor", "Set raw motor output: setmotor <motor_id> <pwm> <dir>", CONSOLE_COMMAND_SETMOTOR},
+    {"setmotor", "Set raw diagnostic motor output: setmotor <motor_id> <pwm> <dir>", CONSOLE_COMMAND_SETMOTOR},
+    {"jobrx", "Queue tray receive job: jobrx", CONSOLE_COMMAND_JOBRX},
+    {"jobtx", "Queue tray transmit job: jobtx", CONSOLE_COMMAND_JOBTX},
+    {"getstatus", "Get state-machine status: getstatus", CONSOLE_COMMAND_GETSTATUS},
     {"stop", "Stop all motors: stop", CONSOLE_COMMAND_STOP},
     {"stopmotor", "Stop raw motor output: stopmotor <motor_id>", CONSOLE_COMMAND_STOPMOTOR},
     {"setposition", "Set PID target position: setposition <motor_id> <position>", CONSOLE_COMMAND_SETPOSITION},
@@ -137,6 +144,56 @@ static esp_err_t set_console_position_control(const char *motor_id, bool enabled
     return ESP_OK;
 }
 
+/* Converts state-machine job results to console-stable tokens. */
+static const char *statemachine_result_text(statemachine_result_t result)
+{
+    switch (result) {
+    case STATEMACHINE_RESULT_RX_DONE:
+        return "RX_DONE";
+    case STATEMACHINE_RESULT_TX_DONE:
+        return "TX_DONE";
+    case STATEMACHINE_RESULT_TRAY_ALREADY_PRESENT:
+        return "TRAY_ALREADY_PRESENT";
+    case STATEMACHINE_RESULT_TRAY_NOT_RECEIVED:
+        return "TRAY_NOT_RECEIVED";
+    case STATEMACHINE_RESULT_TRAY_TRANSFER_STUCK:
+        return "TRAY_TRANSFER_STUCK";
+    case STATEMACHINE_RESULT_NO_TRAY_PRESENT:
+        return "NO_TRAY_PRESENT";
+    case STATEMACHINE_RESULT_TRAY_HANDOFF_STUCK:
+        return "TRAY_HANDOFF_STUCK";
+    case STATEMACHINE_RESULT_EMERGENCY_STOP:
+        return "EMERGENCY_STOP";
+    case STATEMACHINE_RESULT_JOB_TIMEOUT:
+        return "JOB_TIMEOUT";
+    case STATEMACHINE_RESULT_JOB_REJECTED:
+        return "JOB_REJECTED";
+    }
+
+    return "UNKNOWN";
+}
+
+/* Converts state-machine live status to console-stable tokens. */
+static const char *statemachine_status_text(statemachine_status_t status)
+{
+    switch (status) {
+    case STATEMACHINE_STATUS_IDLE:
+        return "IDLE";
+    case STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY:
+        return "RECEIVE_WAITING_FOR_TRAY";
+    case STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY:
+        return "RECEIVE_MOVING_TRAY";
+    case STATEMACHINE_STATUS_RECEIVE_TRAY_RECEIVED:
+        return "RECEIVE_TRAY_RECEIVED";
+    case STATEMACHINE_STATUS_TRANSMIT_TRANSMITTING_TRAY:
+        return "TRANSMIT_TRANSMITTING_TRAY";
+    case STATEMACHINE_STATUS_TRANSMIT_TRAY_HANDED_OFF:
+        return "TRANSMIT_TRAY_HANDED_OFF";
+    }
+
+    return "UNKNOWN";
+}
+
 /* Handles every registered console command through one command table and switch. */
 static int handle_console_command(int argc, char **argv)
 {
@@ -185,6 +242,51 @@ static int handle_console_command(int argc, char **argv)
         }
 
         printf("OK SETMOTOR motor=%s pwm=%d dir=%d\n", argv[1], pwm, direction);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_JOBRX:
+    {
+        statemachine_result_t result = STATEMACHINE_RESULT_JOB_REJECTED;
+
+        if (argc != 1) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Run the receive job through statemachine.c and wait for its result. */
+        result = statemachine_jobrx();
+        printf("OK JOBRX result=%s\n", statemachine_result_text(result));
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_JOBTX:
+    {
+        statemachine_result_t result = STATEMACHINE_RESULT_JOB_REJECTED;
+
+        if (argc != 1) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Run the transmit job through statemachine.c and wait for its result. */
+        result = statemachine_jobtx();
+        printf("OK JOBTX result=%s\n", statemachine_result_text(result));
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_GETSTATUS:
+    {
+        statemachine_status_t status = STATEMACHINE_STATUS_IDLE;
+
+        if (argc != 1) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Read the live state-machine status from statemachine.c. */
+        status = statemachine_get_status();
+        printf("OK STATUS state=%s\n", statemachine_status_text(status));
         return 0;
     }
 
