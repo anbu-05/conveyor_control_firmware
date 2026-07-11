@@ -204,6 +204,71 @@ getstatus
 status
 ```
 
+## Serial Web Driver
+
+The `driver/` folder contains a browser-based serial debug driver for the
+firmware. It is separate from the older `tools/conveyor_web` template and does
+not use MQTT.
+
+Install the Python dependencies:
+
+```bash
+python3 -m pip install -r driver/requirements.txt
+```
+
+Start the local web server:
+
+```bash
+python3 -m driver --host 127.0.0.1 --port 8080 --serial-port /dev/ttyACM0 --serial-baud 115200
+```
+
+Open the UI in a browser:
+
+```text
+http://127.0.0.1:8080
+```
+
+Typical workflow:
+
+1. Flash the ESP32-S3 firmware and connect the board over USB Serial/JTAG.
+2. Start the driver server with the serial port shown by your system, usually
+   `/dev/ttyACM0` on Linux.
+3. Click `Connect` in the web UI.
+4. Use `Status`, `Get All Config`, `Job State`, `Position`, and `Sensors` for
+   safe readback.
+5. Use motor controls carefully. `Set Motor`, `Stop Motor`, and `Stop All`
+   directly affect hardware output.
+
+The web driver exposes the current ESP console commands over serial, including
+`status`, `getstatus`, `getconfig`, `setconfig`, `resetconfig`, `jobrx`,
+`jobtx`, `setmotor`, `stopmotor`, `stop`, `setposition`, `getposition`,
+`positioncontrol`, `setoffset`, and `getsensors`. The raw console input can be
+used for any firmware command that is not represented by a button.
+
+### PID Tuning
+
+The web UI includes a `PID Tuning` card for repeatedly trying position PID
+values. KP, KI, and KD are entered as milli-unit runtime config values:
+
+```text
+500 = 0.500
+50 = 0.050
+```
+
+`Apply Gains` sends these serial commands:
+
+```text
+setconfig pid_kp_milli <kp>
+setconfig pid_ki_milli <ki>
+setconfig pid_kd_milli <kd>
+```
+
+`Run Step + Return` applies the gains, enables position control, reads the
+current position, moves by the configured relative `Step` count, polls
+`getposition` until the target is within tolerance, then returns to the start
+position. Use a small step first and keep `Disable PID after each trial` checked
+while tuning. Use `Abort Tune` or `Stop All` immediately if movement is unsafe.
+
 ## Build
 
 Use an ESP-IDF shell with `idf.py` available:

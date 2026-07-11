@@ -2,6 +2,8 @@
   "idf.currentSetup": "/home/anbu/.espressif/v6.0.1/esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3",
+    "OPENOCD_SCRIPTS": "/home/anbu/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260304/openocd-esp32/share/openocd/scripts",
+    "PATH": "/home/anbu/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260304/openocd-esp32/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "OPENOCD_USB_ADAPTER_LOCATION": "8-1"
   },
   "clangd.path": "/home/anbu/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
@@ -14,5 +16,5 @@
     "board/esp32s3-builtin.cfg"
   ],
   "idf.flashType": "JTAG",
-  "idf.port": "/dev/ttyACM0"
+  "idf.port": "/dev/ttyACM1"
 }

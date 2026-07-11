@@ -3,3 +3,4 @@ sdkconfig
 managed_components/
 dependencies.lock
 tools/conveyor_web/__pycache__/
+driver/__pycache__/

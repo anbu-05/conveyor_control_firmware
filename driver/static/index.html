@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <title>Conveyor Serial Driver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260710-queue-fix-1" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="eyebrow">Serial Debug</span>
+          <h1>Conveyor Driver</h1>
+        </div>
+        <div class="topbar-right">
+          <span id="uiBuild" class="pill muted">UI queue-fix-1</span>
+          <span id="wsStatus" class="pill">WS disconnected</span>
+          <span id="serialStatus" class="pill">Serial disconnected</span>
+        </div>
+      </header>
+
+      <main class="main-grid serial-grid">
+        <div class="col-left">
+          <section class="card">
+            <h2>Serial Connection</h2>
+            <form id="serialConnectForm">
+              <div class="field-row serial-field-row">
+                <label class="field">
+                  <span>Port</span>
+                  <input id="serialPort" autocomplete="off" placeholder="/dev/ttyACM0" />
+                </label>
+                <label class="field field-sm">
+                  <span>Baud</span>
+                  <input id="serialBaud" type="number" min="1" max="3000000" placeholder="115200" />
+                </label>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn-primary">Connect</button>
+                <button id="serialDisconnectButton" type="button" class="btn-ghost">Disconnect</button>
+                <button class="serial-command btn-danger" data-serial-command="stop" type="button">Stop All</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card state-card" id="serialStateCard">
+            <h2>Runtime State</h2>
+            <div class="state-body">
+              <span id="serialJobState" class="state-big">UNKNOWN</span>
+              <span id="serialReady" class="state-elapsed">not ready</span>
+            </div>
+            <div id="serialErrorValue" class="error-line">No serial errors</div>
+          </section>
+
+          <div class="metrics-row serial-metrics">
+            <div class="metric">
+              <span class="metric-label">Motor</span>
+              <strong id="serialMotorId">M0</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">PWM</span>
+              <strong id="serialMotorPwm">-</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Direction</span>
+              <strong id="serialDirectionValue">-</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Position</span>
+              <strong id="serialPositionValue">-</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Tray</span>
+              <strong id="serialTrayValue">Unknown</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Upstream</span>
+              <strong id="serialUpstreamSensor">-</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Downstream</span>
+              <strong id="serialDownstreamSensor">-</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">PID</span>
+              <strong id="serialPositionControl">Unknown</strong>
+            </div>
+          </div>
+
+          <section class="card status-card">
+            <div class="log-header">
+              <h2>Status Summary</h2>
+              <span id="statusCommandCount" class="pill muted">0 commands</span>
+            </div>
+            <div class="status-grid">
+              <div class="metric"><span class="metric-label">App</span><strong id="statusAppName">-</strong></div>
+              <div class="metric"><span class="metric-label">Machine</span><strong id="statusMachineId">-</strong></div>
+              <div class="metric"><span class="metric-label">Topic</span><strong id="statusTopicName">-</strong></div>
+              <div class="metric"><span class="metric-label">MQTT URI</span><strong id="statusMqttUri">-</strong></div>
+            </div>
+            <div class="status-list-row">
+              <span class="metric-label">Motors</span>
+              <div id="statusMotorList" class="chip-list">-</div>
+            </div>
+            <details class="status-details">
+              <summary>Show commands from firmware</summary>
+              <pre id="statusCommandList" class="status-list"></pre>
+            </details>
+          </section>
+
+          <section class="card log-card">
+            <div class="log-header">
+              <h2>Serial Log</h2>
+              <button id="clearSerialLogButton" type="button" class="btn-ghost btn-sm">Clear</button>
+            </div>
+            <pre id="serialLogOutput" aria-live="polite"></pre>
+          </section>
+        </div>
+
+        <div class="col-right">
+          <section class="card">
+            <h2>Quick Reads</h2>
+            <div class="cmd-grid">
+              <button class="serial-command btn-cmd" data-serial-command="status">Status</button>
+              <button class="serial-command btn-cmd" data-serial-command="getstatus">Job State</button>
+              <button class="serial-command btn-cmd needs-motor" data-serial-command="getposition">Position</button>
+              <button class="serial-command btn-cmd needs-motor" data-serial-command="getsensors">Sensors</button>
+              <button class="serial-command btn-cmd wide" data-serial-command="getconfig">Get All Config</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>Job Control</h2>
+            <div class="cmd-grid">
+              <button class="serial-command btn-cmd" data-serial-command="jobrx">Job RX</button>
+              <button class="serial-command btn-cmd" data-serial-command="jobtx">Job TX</button>
+              <button class="serial-command btn-danger wide" data-serial-command="stop">Immediate Stop</button>
+            </div>
+          </section>
+
+          <section class="card danger-zone">
+            <h2>Motor Debug</h2>
+            <div class="tune-row">
+              <label class="tune-label" for="serialMotorInput">Motor</label>
+              <input id="serialMotorInput" autocomplete="off" value="M0" />
+            </div>
+            <div class="tune-row">
+              <label class="tune-label" for="serialPwmInput">PWM</label>
+              <input id="serialPwmInput" type="number" min="0" max="255" value="64" />
+              <select id="serialDirectionInput" aria-label="Motor direction">
+                <option value="0">Dir 0</option>
+                <option value="1">Dir 1</option>
+              </select>
+            </div>
+            <div class="btn-row compact-row">
+              <button id="serialSetMotorButton" class="btn-danger" type="button">Set Motor</button>
+              <button id="serialStopMotorButton" class="btn-ghost" type="button">Stop Motor</button>
+            </div>
+            <p class="card-note">Direct motor commands bypass normal job behavior.</p>
+          </section>
+
+          <section class="card">
+            <h2>Position Control</h2>
+            <div class="watch-row">
+              <span id="serialPidPill" class="pill">PID unknown</span>
+              <button id="serialPositionControlOnButton" class="btn-cmd" type="button">On</button>
+              <button id="serialPositionControlOffButton" class="btn-ghost" type="button">Off</button>
+            </div>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialPositionInput">Target</label>
+              <input id="serialPositionInput" type="number" value="0" />
+              <button id="serialSetPositionButton" class="btn-cmd" type="button">Set</button>
+            </div>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialOffsetInput">Offset</label>
+              <input id="serialOffsetInput" type="number" value="0" />
+              <button id="serialSetOffsetButton" class="btn-cmd" type="button">Set</button>
+            </div>
+            <div class="watch-row position-poll-row">
+              <span id="positionPollStatus" class="pill muted">Position poll off</span>
+              <input id="positionPollInterval" type="number" min="50" value="100" aria-label="Position poll interval ms" />
+              <button id="positionPollToggleButton" class="btn-cmd" type="button">Start Poll</button>
+            </div>
+            <p class="card-note">Live PID gain changes are handled through runtime config milli-unit keys.</p>
+          </section>
+
+          <section class="card pid-tune-card">
+            <h2>PID Tuning</h2>
+            <div class="tune-row triple-row">
+              <label class="tune-label" for="pidTuneKpMilli">KP</label>
+              <input id="pidTuneKpMilli" type="number" min="0" max="100000" value="500" />
+              <label class="tune-label compact-label" for="pidTuneKiMilli">KI</label>
+              <input id="pidTuneKiMilli" type="number" min="0" max="100000" value="0" />
+              <label class="tune-label compact-label" for="pidTuneKdMilli">KD</label>
+              <input id="pidTuneKdMilli" type="number" min="0" max="100000" value="50" />
+            </div>
+            <p class="card-note">Milli-unit gains: 500 means 0.500 in firmware.</p>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="pidTuneStepCounts">Step</label>
+              <input id="pidTuneStepCounts" type="number" value="500" />
+              <button id="pidTuneApplyButton" class="btn-cmd" type="button">Apply Gains</button>
+            </div>
+            <div class="tune-row triple-row">
+              <label class="tune-label" for="pidTunePollMs">Poll</label>
+              <input id="pidTunePollMs" type="number" min="50" value="100" />
+              <label class="tune-label compact-label" for="pidTuneTolerance">Tol</label>
+              <input id="pidTuneTolerance" type="number" min="0" value="20" />
+              <label class="tune-label compact-label" for="pidTuneTimeoutMs">Timeout</label>
+              <input id="pidTuneTimeoutMs" type="number" min="100" value="5000" />
+            </div>
+            <label class="check-row">
+              <input id="pidTuneDisableAfter" type="checkbox" checked />
+              <span>Disable PID after each trial</span>
+            </label>
+            <div class="btn-row compact-row">
+              <button id="pidTuneRunButton" class="btn-primary" type="button">Run Step + Return</button>
+              <button id="pidTuneAbortButton" class="btn-danger" type="button">Abort Tune</button>
+            </div>
+            <div class="tune-status-grid">
+              <div class="metric"><span class="metric-label">Start</span><strong id="pidTuneStartValue">-</strong></div>
+              <div class="metric"><span class="metric-label">Target</span><strong id="pidTuneTargetValue">-</strong></div>
+              <div class="metric"><span class="metric-label">Current</span><strong id="pidTuneCurrentValue">-</strong></div>
+              <div class="metric"><span class="metric-label">Result</span><strong id="pidTuneResultValue">Idle</strong></div>
+            </div>
+            <pre id="pidTuneHistory" class="tune-history" aria-live="polite"></pre>
+          </section>
+
+          <section class="card">
+            <h2>Runtime Config</h2>
+            <div class="tune-row">
+              <label class="tune-label" for="serialConfigKey">Key</label>
+              <select id="serialConfigKey">
+                <option value="pid_kp_milli">pid_kp_milli</option>
+                <option value="pid_ki_milli">pid_ki_milli</option>
+                <option value="pid_kd_milli">pid_kd_milli</option>
+                <option value="max_pwm">max_pwm</option>
+                <option value="max_speed_counts_per_sec">max_speed_counts_per_sec</option>
+                <option value="position_tolerance_counts">position_tolerance_counts</option>
+              </select>
+              <button id="serialGetConfigButton" class="btn-cmd" type="button">Get</button>
+            </div>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialConfigValue">Value</label>
+              <input id="serialConfigValue" type="number" value="0" />
+              <button id="serialSetConfigButton" class="btn-cmd" type="button">Set</button>
+            </div>
+            <p id="serialConfigHint" class="card-note config-note">Numeric runtime config value.</p>
+            <div class="btn-row compact-row">
+              <button class="serial-command btn-ghost" data-serial-command="getconfig" type="button">Get All</button>
+              <button id="serialResetConfigButton" class="btn-danger" type="button">Reset Selected</button>
+            </div>
+          </section>
+
+          <section class="card danger-zone">
+            <h2>Raw Console</h2>
+            <details>
+              <summary>Show raw command input</summary>
+              <div class="tune-row single-action-row raw-row">
+                <input id="serialRawInput" autocomplete="off" placeholder="status" />
+                <button id="serialRawButton" class="btn-danger" type="button">Send</button>
+              </div>
+            </details>
+          </section>
+        </div>
+      </main>
+    </div>
+    <script src="/static/app.js?v=20260710-queue-fix-1"></script>
+  </body>
+</html>
