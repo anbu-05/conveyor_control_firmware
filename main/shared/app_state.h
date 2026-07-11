@@ -32,11 +32,9 @@ typedef struct {
     int current_position;
     int target_position;
     int position_offset;
-    int target_speed;
-    int current_speed;
     bool position_control;
 
-    /* Live PID tuning values. Runtime config owns persisted/default values. */
+    /* Per-motor PID gains; global config was removed because motors may tune differently. TODO: persist in NVS and load during boot. */
     float kp;
     float ki;
     float kd;

@@ -1,5 +1,36 @@
 # Progress Log
 
+## 2026-07-11T06:52:04+05:30
+
+Documented the code-comment convention for control-path edits.
+
+Changes included in this checkpoint:
+
+- Added concise reasoning comments near the PID gain ownership boundary, runtime-config boundary, position deadband, signed-PWM output, and console-to-PID helper calls.
+- Kept the comments focused on why those lines were touched so future code review can follow the design evolution without adding noise to every ordinary assignment.
+- Established the working convention that future code edits should include short reasoning comments at the touched design boundary when the edit changes ownership, control behavior, persistence expectations, or command/API routing.
+
+Validation:
+
+- ESP-IDF build completed successfully after adding the reasoning comments.
+- VS Code diagnostics were clean for the touched files.
+
+## 2026-07-11T06:39:27+05:30
+
+Cleaned up PID gain ownership and position-controller configuration.
+
+Changes included in this checkpoint:
+
+- Kept `kp`, `ki`, and `kd` as per-motor fields in `motor_t`; these are now the live values consumed by the PID task.
+- Removed global PID gain keys from runtime config so one motor's tuning cannot accidentally stand in for all motors.
+- Added `set_pid_gains()` and `get_pid_gains()` to `tasks/pid.c`, with console commands `setpid <motor_id> <kp_milli> <ki_milli> <kd_milli>` and `getpid <motor_id>` calling those helpers.
+- Left motor PID gains initialized to zero on boot for now; the fix for persistent gain values belongs with the upcoming `tasks/nvs.c` implementation, which should store the per-motor gains and load them back during boot.
+- Documented the NVS persistence TODO next to the per-motor gain fields in `motor_t`.
+
+Validation:
+
+- ESP-IDF build completed successfully after the per-motor PID gain changes.
+
 ## 2026-07-09 15:07:53 IST
 
 Prepared firmware changes for a simplified bring-up model with runtime config held in flash defaults plus RAM only.

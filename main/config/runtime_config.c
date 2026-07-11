@@ -10,32 +10,12 @@ typedef struct {
 } runtime_config_entry_t;
 
 static runtime_config_entry_t s_config[RUNTIME_CONFIG_COUNT] = {
-    /* Position PID proportional gain, stored as milli-units. */
-    [RUNTIME_CONFIG_PID_KP_MILLI] = {
-        .default_value = 500,
-        .value = 500,
-    },
-    /* Position PID integral gain, stored as milli-units. */
-    [RUNTIME_CONFIG_PID_KI_MILLI] = {
-        .default_value = 0,
-        .value = 0,
-    },
-    /* Position PID derivative gain, stored as milli-units. */
-    [RUNTIME_CONFIG_PID_KD_MILLI] = {
-        .default_value = 50,
-        .value = 50,
-    },
     /* Upper PWM duty clamp used by raw setmotor and PID motor output. */
     [RUNTIME_CONFIG_MAX_PWM] = {
         .default_value = 255,
         .value = 255,
     },
-    /* Maximum signed speed the position PID may request in encoder counts/sec. */
-    [RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC] = {
-        .default_value = 20000,
-        .value = 20000,
-    },
-    /* Position error tolerance where PID treats the target as reached. */
+    /* Position error deadband applied before PID terms. */
     [RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS] = {
         .default_value = 20,
         .value = 20,

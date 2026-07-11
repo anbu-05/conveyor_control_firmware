@@ -42,6 +42,8 @@ typedef enum {
     CONSOLE_COMMAND_SETPOSITION,
     CONSOLE_COMMAND_GETPOSITION,
     CONSOLE_COMMAND_POSITIONCONTROL,
+    CONSOLE_COMMAND_SETPID,
+    CONSOLE_COMMAND_GETPID,
     CONSOLE_COMMAND_SETOFFSET,
     CONSOLE_COMMAND_GETCONFIG,
     CONSOLE_COMMAND_SETCONFIG,
@@ -71,6 +73,8 @@ static const console_command_entry_t s_commands[] = {
     {"setposition", "Set PID target position: setposition <motor_id> <position>", CONSOLE_COMMAND_SETPOSITION},
     {"getposition", "Get current position: getposition <motor_id>", CONSOLE_COMMAND_GETPOSITION},
     {"positioncontrol", "Enable or disable PID position control: positioncontrol <motor_id> <0|1>", CONSOLE_COMMAND_POSITIONCONTROL},
+    {"setpid", "Set per-motor PID gains: setpid <motor_id> <kp_milli> <ki_milli> <kd_milli>", CONSOLE_COMMAND_SETPID},
+    {"getpid", "Get per-motor PID gains: getpid <motor_id>", CONSOLE_COMMAND_GETPID},
     {"setoffset", "Set position offset: setoffset <motor_id> <offset>", CONSOLE_COMMAND_SETOFFSET},
     {"getconfig", "Read runtime config: getconfig [key]", CONSOLE_COMMAND_GETCONFIG},
     {"setconfig", "Set runtime config in RAM: setconfig <key> <value>", CONSOLE_COMMAND_SETCONFIG},
@@ -80,11 +84,7 @@ static const console_command_entry_t s_commands[] = {
 };
 
 static const console_runtime_config_entry_t s_runtime_configs[] = {
-    {"pid_kp_milli", RUNTIME_CONFIG_PID_KP_MILLI},
-    {"pid_ki_milli", RUNTIME_CONFIG_PID_KI_MILLI},
-    {"pid_kd_milli", RUNTIME_CONFIG_PID_KD_MILLI},
     {"max_pwm", RUNTIME_CONFIG_MAX_PWM},
-    {"max_speed_counts_per_sec", RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC},
     {"position_tolerance_counts", RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS},
 };
 
@@ -403,6 +403,52 @@ static int handle_console_command(int argc, char **argv)
         return 0;
     }
 
+    case CONSOLE_COMMAND_SETPID: {
+        int kp_milli = 0;
+        int ki_milli = 0;
+        int kd_milli = 0;
+
+        if (argc != 5 || !parse_int_arg(argv[2], &kp_milli) ||
+            !parse_int_arg(argv[3], &ki_milli) || !parse_int_arg(argv[4], &kd_milli) ||
+            kp_milli < 0 || ki_milli < 0 || kd_milli < 0) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Keep gain ownership in pid.c; console only parses text and prints the result. */
+        err = set_pid_gains(argv[1], kp_milli, ki_milli, kd_milli);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK SETPID motor=%s kp_milli=%d ki_milli=%d kd_milli=%d\n",
+               argv[1], kp_milli, ki_milli, kd_milli);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_GETPID: {
+        int kp_milli = 0;
+        int ki_milli = 0;
+        int kd_milli = 0;
+
+        if (argc != 2) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Read through pid.c for the same reason setpid writes through pid.c. */
+        err = get_pid_gains(argv[1], &kp_milli, &ki_milli, &kd_milli);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK PID motor=%s kp_milli=%d ki_milli=%d kd_milli=%d\n",
+               argv[1], kp_milli, ki_milli, kd_milli);
+        return 0;
+    }
+
     case CONSOLE_COMMAND_GETSENSORS: {
         int motor_index = -1;
         int upstream_sensor = 0;
@@ -580,7 +626,13 @@ static int handle_console_command(int argc, char **argv)
             printf("COMMAND %s - %s\n", s_commands[i].name, s_commands[i].help);
         }
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-            printf("MOTOR %s\n", motors[i].id);
+            int kp_milli = 0;
+            int ki_milli = 0;
+            int kd_milli = 0;
+
+            /* Status reports per-motor tuning without reaching around the PID API boundary. */
+            (void)get_pid_gains(motors[i].id, &kp_milli, &ki_milli, &kd_milli);
+            printf("MOTOR %s kp_milli=%d ki_milli=%d kd_milli=%d\n", motors[i].id, kp_milli, ki_milli, kd_milli);
         }
         return 0;
     }

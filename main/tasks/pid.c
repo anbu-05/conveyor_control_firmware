@@ -23,7 +23,6 @@
 typedef struct {
     int current_position;
     int target_position;
-    int target_speed;
     int direction;
     bool position_control;
     float kp;
@@ -40,25 +39,12 @@ static int int_abs(int value)
     return value < 0 ? -value : value;
 }
 
-/* Converts runtime-config milli-unit gains into live float PID gains. */
-static float config_gain_or_zero(runtime_config_key_t key)
-{
-    int32_t value = 0;
-
-    /* Runtime config may fail during early bring-up; default to a safe zero gain. */
-    if (runtime_config_get(key, &value) != ESP_OK) {
-        return 0.0f;
-    }
-
-    return (float)value / PID_GAIN_SCALE;
-}
-
-/* Applies validated live PID gains to one motor and clears old PID memory. */
-static esp_err_t apply_pid_gains(const char *motor_id, float kp, float ki, float kd)
+/* Clears PID history only; gains/target survive resets because callers use this after mode or tuning changes. */
+static esp_err_t reset_pid_memory(const char *motor_id)
 {
     motor_t *motor = NULL;
 
-    if (motor_id == NULL || kp < 0.0f || ki < 0.0f || kd < 0.0f) {
+    if (motor_id == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -76,9 +62,6 @@ static esp_err_t apply_pid_gains(const char *motor_id, float kp, float ki, float
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
     }
 
-    motor->kp = kp;
-    motor->ki = ki;
-    motor->kd = kd;
     motor->integral = 0.0f;
     motor->previous_error = 0.0f;
     motor->has_previous_error = false;
@@ -117,7 +100,6 @@ static esp_err_t read_pid_snapshot(const char *motor_id, pid_snapshot_t *out_sna
     /* Copy all inputs used by one PID tick so calculations are self-consistent. */
     out_snapshot->current_position = motor->current_position;
     out_snapshot->target_position = motor->target_position;
-    out_snapshot->target_speed = motor->target_speed;
     out_snapshot->direction = motor->direction;
     out_snapshot->position_control = motor->position_control;
     out_snapshot->kp = motor->kp;
@@ -173,15 +155,15 @@ static esp_err_t write_pid_memory(const char *motor_id,
     return ESP_OK;
 }
 
-/* Clamps the integral accumulator to the largest useful speed contribution. */
-static float clamp_integral(float integral, float ki, int32_t max_speed_counts_per_sec)
+/* Clamps the integral accumulator to the largest useful PWM contribution. */
+static float clamp_integral(float integral, float ki, int32_t max_pwm)
 {
     if (ki <= 0.0f) {
         return 0.0f;
     }
 
-    /* Limit windup so integral output cannot exceed the configured speed range. */
-    const float limit = (float)max_speed_counts_per_sec / ki;
+    /* Limit windup so integral output cannot exceed the configured PWM range. */
+    const float limit = (float)max_pwm / ki;
     if (integral > limit) {
         return limit;
     }
@@ -192,56 +174,82 @@ static float clamp_integral(float integral, float ki, int32_t max_speed_counts_p
     return integral;
 }
 
-/* Clamps signed speed to the configured counts/sec range. */
-static int clamp_speed(float speed_counts_per_sec, int32_t max_speed_counts_per_sec)
-{
-    /* Positive and negative speed limits are symmetric around zero. */
-    if (speed_counts_per_sec > (float)max_speed_counts_per_sec) {
-        return (int)max_speed_counts_per_sec;
-    }
-    if (speed_counts_per_sec < (float)-max_speed_counts_per_sec) {
-        return (int)-max_speed_counts_per_sec;
-    }
-
-    return (int)speed_counts_per_sec;
-}
-
-/* Converts signed speed in encoder counts/sec to direction and PWM for one motor. */
-static esp_err_t set_motor_speed(const char *motor_id,
-                                 int speed_counts_per_sec,
-                                 int current_direction,
-                                 int32_t max_speed_counts_per_sec,
-                                 int32_t max_pwm)
-{
-    if (max_speed_counts_per_sec <= 0 || max_pwm <= 0) {
-        return set_motor(motor_id, 0, current_direction);
-    }
-
-    /* Clamp speed before deriving direction and PWM magnitude. */
-    int clamped_speed = speed_counts_per_sec;
-    if (clamped_speed > max_speed_counts_per_sec) {
-        clamped_speed = (int)max_speed_counts_per_sec;
-    }
-    if (clamped_speed < -max_speed_counts_per_sec) {
-        clamped_speed = (int)-max_speed_counts_per_sec;
-    }
-
-    /* Positive speed maps to positive direction; zero preserves current direction. */
-    const int direction = clamped_speed == 0 ? current_direction :
-                          clamped_speed > 0 ? APP_MOTOR_POSITIVE_DIR_LEVEL : APP_MOTOR_NEGATIVE_DIR_LEVEL;
-    const int speed_magnitude = int_abs(clamped_speed);
-    const int pwm = (int)(((int64_t)speed_magnitude * max_pwm) / max_speed_counts_per_sec);
-
-    return set_motor(motor_id, pwm, direction);
-}
-
-/* Initializes one motor's live PID gains from flash-default runtime config values. */
+/* Boot init only clears runtime history; per-motor gains stay in motor_t and will be restored by NVS later. */
 esp_err_t motor_pid_init(const char *motor_id)
 {
-    return apply_pid_gains(motor_id,
-                           config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI),
-                           config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI),
-                           config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI));
+    return reset_pid_memory(motor_id);
+}
+
+/* PID gains live here instead of runtime_config so each motor can be tuned independently. */
+esp_err_t set_pid_gains(const char *motor_id, int kp_milli, int ki_milli, int kd_milli)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || kp_milli < 0 || ki_milli < 0 || kd_milli < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    /* Reset PID history because old integral/derivative state belongs to the previous tuning. */
+    motor->kp = (float)kp_milli / PID_GAIN_SCALE;
+    motor->ki = (float)ki_milli / PID_GAIN_SCALE;
+    motor->kd = (float)kd_milli / PID_GAIN_SCALE;
+    motor->integral = 0.0f;
+    motor->previous_error = 0.0f;
+    motor->has_previous_error = false;
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Returns milli-units to keep console/NVS integer-friendly while PID math uses floats internally. */
+esp_err_t get_pid_gains(const char *motor_id, int *out_kp_milli, int *out_ki_milli, int *out_kd_milli)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || out_kp_milli == NULL || out_ki_milli == NULL || out_kd_milli == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    *out_kp_milli = (int)(motor->kp * PID_GAIN_SCALE);
+    *out_ki_milli = (int)(motor->ki * PID_GAIN_SCALE);
+    *out_kd_milli = (int)(motor->kd * PID_GAIN_SCALE);
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
 }
 
 /* Sets one motor's offset-corrected position target without changing control mode. */
@@ -354,7 +362,7 @@ esp_err_t set_offset(const char *motor_id, int position_offset)
     return ESP_OK;
 }
 
-/* Runs one motor's PID loop and writes speed-derived output through set_motor(). */
+/* Runs one motor's position PID loop and writes signed PWM through set_motor(). */
 void motor_pid_task(void *arg)
 {
     const char *motor_id = (const char *)arg;
@@ -367,7 +375,6 @@ void motor_pid_task(void *arg)
     while (true) {
         pid_snapshot_t snapshot = {0};
         int32_t max_pwm = 0;
-        int32_t max_speed_counts_per_sec = 0;
         int32_t position_tolerance = 0;
 
         /* Read all shared inputs once so this loop iteration uses a consistent view. */
@@ -376,18 +383,11 @@ void motor_pid_task(void *arg)
             continue;
         }
 
-        /* Runtime config can change while the task runs, so refresh values each tick. */
-        snapshot.kp = config_gain_or_zero(RUNTIME_CONFIG_PID_KP_MILLI);
-        snapshot.ki = config_gain_or_zero(RUNTIME_CONFIG_PID_KI_MILLI);
-        snapshot.kd = config_gain_or_zero(RUNTIME_CONFIG_PID_KD_MILLI);
+        /* Only shared clamps come from runtime_config; gains are per-motor values from the snapshot above. */
         (void)runtime_config_get(RUNTIME_CONFIG_MAX_PWM, &max_pwm);
-        (void)runtime_config_get(RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC, &max_speed_counts_per_sec);
         (void)runtime_config_get(RUNTIME_CONFIG_POSITION_TOLERANCE_COUNTS, &position_tolerance);
         if (max_pwm < 0) {
             max_pwm = 0;
-        }
-        if (max_speed_counts_per_sec < 0) {
-            max_speed_counts_per_sec = 0;
         }
         if (position_tolerance < 0) {
             position_tolerance = 0;
@@ -401,38 +401,38 @@ void motor_pid_task(void *arg)
             continue;
         }
 
-        const int error_counts = snapshot.target_position - snapshot.current_position;
-        if (int_abs(error_counts) <= position_tolerance) {
-            /* We are within tolerance; reset PID memory and command zero speed. */
-            (void)write_pid_memory(motor_id, 0.0f, 0.0f, false);
-            (void)set_motor_speed(motor_id, 0, snapshot.direction, max_speed_counts_per_sec, max_pwm);
-            vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
-            continue;
+        const float dt_seconds = (float)APP_MOTOR_CONTROL_PERIOD_MS / 1000.0f;
+        const int raw_error_counts = snapshot.target_position - snapshot.current_position;
+        int pid_error_counts = 0;
+
+        /* Tolerance is a PID deadband, not an early stop, so controller history stays coherent near target. */
+        if (int_abs(raw_error_counts) > position_tolerance) {
+            pid_error_counts = raw_error_counts > 0 ?
+                               raw_error_counts - position_tolerance : raw_error_counts + position_tolerance;
         }
 
-        const float dt_seconds = (float)APP_MOTOR_CONTROL_PERIOD_MS / 1000.0f;
-        const float error = (float)error_counts;
+        const float error = (float)pid_error_counts;
         const float derivative = snapshot.has_previous_error ?
                                  (error - snapshot.previous_error) / dt_seconds : 0.0f;
 
-        /* Integrate error over time, then clamp to prevent windup at speed limits. */
-        const float integral = clamp_integral(snapshot.integral + (error * dt_seconds),
-                                             snapshot.ki,
-                                             max_speed_counts_per_sec);
-
-        /* The PID result is signed speed in counts/sec; conversion happens later. */
-        const float speed_output = (snapshot.kp * error) +
-                                   (snapshot.ki * integral) +
-                                   (snapshot.kd * derivative);
-        int target_speed_counts_per_sec = clamp_speed(speed_output, max_speed_counts_per_sec);
-        if ((error_counts > 0 && target_speed_counts_per_sec < 0) ||
-            (error_counts < 0 && target_speed_counts_per_sec > 0)) {
-            target_speed_counts_per_sec = 0;
+        const float integral = pid_error_counts == 0 ? 0.0f :
+                               clamp_integral(snapshot.integral + (error * dt_seconds), snapshot.ki, max_pwm);
+        float pwm_output = (snapshot.kp * error) +
+                           (snapshot.ki * integral) +
+                           (snapshot.kd * derivative);
+        if (pwm_output > (float)max_pwm) {
+            pwm_output = (float)max_pwm;
+        }
+        if (pwm_output < (float)-max_pwm) {
+            pwm_output = (float)-max_pwm;
         }
 
-        /* Convert signed speed to direction/PWM and retain error for derivative. */
-        (void)set_motor_speed(motor_id, target_speed_counts_per_sec, snapshot.direction,
-                              max_speed_counts_per_sec, max_pwm);
+        /* PID output is signed PWM directly; no fake speed command layer sits between PID and hardware. */
+        const int signed_pwm = (int)pwm_output;
+        const int direction = signed_pwm == 0 ? snapshot.direction :
+                              signed_pwm > 0 ? APP_MOTOR_POSITIVE_DIR_LEVEL : APP_MOTOR_NEGATIVE_DIR_LEVEL;
+
+        (void)set_motor(motor_id, int_abs(signed_pwm), direction);
         (void)write_pid_memory(motor_id, integral, error, true);
 
         vTaskDelay(pdMS_TO_TICKS(APP_MOTOR_CONTROL_PERIOD_MS));
