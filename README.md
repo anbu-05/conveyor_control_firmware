@@ -4,8 +4,8 @@ ESP-IDF firmware for an ESP32-S3 motor-control node.
 
 The current implementation is focused on local serial debugging, motor hardware
 control, encoder/sensor polling, runtime config, per-motor PID task ownership,
-and receive/transmit tray state-machine jobs. MQTT is present as a module
-placeholder and will be built on top of the same shared state and control APIs.
+receive/transmit tray state-machine jobs, and a small backend-facing MQTT command
+path built on top of the same state-machine APIs.
 
 ## Current Status
 
@@ -20,10 +20,10 @@ Implemented:
 - One PID task per configured motor.
 - PID APIs: `set_position()`, `get_position()`, `set_offset()`, and `setk()`.
 - Conveyor state-machine APIs: `statemachine_jobrx()`, `statemachine_jobtx()`, and `statemachine_get_status()`.
+- MQTT commands: `ack_test`, `tray_receive`, `tray_transmit`, and `get_commands`.
 
 In progress / placeholders:
 
-- MQTT command handling.
 - Safety behavior.
 
 ## Architecture
@@ -41,7 +41,6 @@ flowchart TD
     E3{{app_state}}
 
     F{{runtime_config}}
-    F1{{runtime_config}}
 
     G{{config}}
 
@@ -59,7 +58,6 @@ flowchart TD
     A   <---> |read and update| E
 
     E3  <---> |read sensors\n & update current state| H
-    F1   ---> |read and update positions| H
     H   <---> |function calls| C
     A    ---> |control\n statemachine| H
     B    ---> |control\n statemachine| H
@@ -104,7 +102,7 @@ flowchart TD
 - `main/tasks/console.c`: ESP console command registration and serial command loop.
 - `main/tasks/hardware.c`: motor GPIO/LEDC output, PCNT encoder setup, sensor polling.
 - `main/tasks/pid.c`: per-motor PID task and PID-facing public APIs.
-- `main/tasks/mqtt.c`: MQTT placeholder task.
+- `main/tasks/mqtt.c`: MQTT command, result, and node-status task.
 - `main/tasks/safety.c`: safety placeholder task.
 - `main/statemachine/statemachine.c`: receive/transmit tray state-machine task.
 - `main/shared/app_state.c`: shared `motors[]` state and mutex.
@@ -204,6 +202,86 @@ getstatus
 status
 ```
 
+## MQTT With Mosquitto
+
+The firmware connects as an MQTT client using the compile-time values in
+`main/config/config.h`:
+
+```text
+WiFi SSID: thrd_warehouse
+Broker: 192.168.1.183:1883
+ESP MQTT client id: factory
+Machine id: C1
+```
+
+The active topics for this firmware image are:
+
+```text
+factory/conveyor/C1/command
+factory/conveyor/C1/result
+factory/conveyor/C1/node_status
+```
+
+Install the Mosquitto CLI tools on your development machine:
+
+```bash
+sudo apt install mosquitto-clients
+```
+
+Use unique Mosquitto client IDs so they do not collide with the ESP client id
+`factory`. In one terminal, subscribe to command results:
+
+```bash
+mosquitto_sub -h 192.168.1.183 -p 1883 -i conveyor_result_debug -t 'factory/conveyor/C1/result' -v
+```
+
+In another terminal, subscribe to node status updates:
+
+```bash
+mosquitto_sub -h 192.168.1.183 -p 1883 -i conveyor_status_debug -t 'factory/conveyor/C1/node_status' -v
+```
+
+Publish an MQTT connectivity check:
+
+```bash
+mosquitto_pub -h 192.168.1.183 -p 1883 -i conveyor_cmd_debug -t 'factory/conveyor/C1/command' -m '{"command_id":"cmd_ack_001","command":"ack_test"}'
+```
+
+Expected result messages:
+
+```json
+{"command_id":"cmd_ack_001","command_status":"received","message":"command received"}
+{"command_id":"cmd_ack_001","command_status":"success","message":"ack test ok"}
+```
+
+Ask the firmware which MQTT commands it supports:
+
+```bash
+mosquitto_pub -h 192.168.1.183 -p 1883 -i conveyor_cmd_debug -t 'factory/conveyor/C1/command' -m '{"command_id":"cmd_get_commands_001","command":"get_commands"}'
+```
+
+Start a tray receive job:
+
+```bash
+mosquitto_pub -h 192.168.1.183 -p 1883 -i conveyor_cmd_debug -t 'factory/conveyor/C1/command' -m '{"command_id":"cmd_rx_001","command":"tray_receive"}'
+```
+
+Start a tray transmit job:
+
+```bash
+mosquitto_pub -h 192.168.1.183 -p 1883 -i conveyor_cmd_debug -t 'factory/conveyor/C1/command' -m '{"command_id":"cmd_tx_001","command":"tray_transmit"}'
+```
+
+Tray commands return `received` first, then a final `success` or `failure` result.
+If another tray job is active or already queued, the final message is a failure
+with `message` set to `JOB_REJECTED`. Malformed JSON is logged by the firmware
+and is not published as a correlated MQTT result.
+
+The current MQTT command set is intentionally smaller than the serial console.
+Backend MQTT supports only `ack_test`, `tray_receive`, `tray_transmit`, and
+`get_commands`; local debug and low-level motion commands remain serial-console
+features.
+
 ## Serial Web Driver
 
 The `driver/` folder contains a browser-based serial debug driver for the
@@ -255,6 +333,9 @@ values. KP, KI, and KD are entered as milli-unit runtime config values:
 50 = 0.050
 ```
 
+The current firmware defaults in `main/shared/app_state.c` start `M0` with
+`kp = 0.5`, `ki = 0.0`, and `kd = 0.05`.
+
 `Apply Gains` sends these serial commands:
 
 ```text
@@ -275,6 +356,13 @@ Use an ESP-IDF shell with `idf.py` available:
 
 ```bash
 idf.py build
+```
+
+For the local ESP-IDF 6.0.1 setup used by this workspace, this command activates
+the configured toolchain and builds for ESP32-S3:
+
+```bash
+. "/home/anbu/.espressif/tools/activate_idf_v6.0.1.sh" && IDF_TARGET=esp32s3 python "/home/anbu/.espressif/v6.0.1/esp-idf/tools/idf.py" build
 ```
 
 Flash and monitor with the ESP-IDF commands appropriate for the connected

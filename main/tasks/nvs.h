@@ -1,12 +1,12 @@
 #pragma once
 
 /*
- * Future NVS task boundary.
+ * NVS task boundary.
  * Persistent settings and calibration storage are intentionally not implemented
- * yet; current runtime_config values are flash defaults plus RAM updates only.
+ * yet; current NVS initialization only supports ESP-IDF services such as WiFi.
  */
 
 #include "esp_err.h"
 
-/* Placeholder init for the later NVS task. */
+/* Initializes the default NVS partition for platform services. */
 esp_err_t nvs_init(void);

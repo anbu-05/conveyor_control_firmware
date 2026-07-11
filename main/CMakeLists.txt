@@ -16,5 +16,5 @@ idf_component_register(
         "shared"
         "statemachine"
         "tasks"
-    REQUIRES esp_wifi esp_event esp_netif esp_driver_gpio esp_driver_ledc esp_driver_pcnt esp_driver_usb_serial_jtag vfs console
+    REQUIRES esp_wifi esp_event esp_netif mqtt cjson nvs_flash esp_driver_gpio esp_driver_ledc esp_driver_pcnt esp_driver_usb_serial_jtag vfs console
 )

@@ -16,7 +16,7 @@
 #include "shared/app_state.h"
 #include "tasks/hardware.h"
 
-#define STATEMACHINE_QUEUE_LEN 4
+#define STATEMACHINE_QUEUE_LEN 1
 #define STATEMACHINE_POLL_MS 20
 #define STATEMACHINE_MOVE_PWM 180
 #define STATEMACHINE_RECEIVE_WAIT_TIMEOUT_MS 5000
@@ -53,6 +53,7 @@ typedef struct {
 } statemachine_request_t;
 
 static QueueHandle_t s_job_queue;
+static volatile bool s_job_active;
 static volatile statemachine_status_t s_status = STATEMACHINE_STATUS_IDLE;
 
 /* Reads downstream/upstream tray sensors as one protected snapshot. */
@@ -291,6 +292,7 @@ esp_err_t statemachine_init(void)
 void statemachine_task(void *arg)
 {
     statemachine_request_t request = {0};
+    statemachine_result_t result = STATEMACHINE_RESULT_JOB_REJECTED;
 
     (void)arg;
 
@@ -304,12 +306,14 @@ void statemachine_task(void *arg)
             continue;
         }
 
+        s_job_active = true;
         /* Call the requested private job state machine and return its result. */
-        statemachine_result_t result = request.job == STATEMACHINE_JOB_RECEIVE ? run_receive_job() : run_transmit_job();
+        result = request.job == STATEMACHINE_JOB_RECEIVE ? run_receive_job() : run_transmit_job();
         if (request.response_queue != NULL) {
             xQueueSend(request.response_queue, &result, portMAX_DELAY);
         }
         s_status = STATEMACHINE_STATUS_IDLE;
+        s_job_active = false;
     }
 }
 
@@ -320,6 +324,9 @@ statemachine_result_t statemachine_jobrx(void)
     statemachine_request_t request = {0};
 
     if (s_job_queue == NULL) {
+        return STATEMACHINE_RESULT_JOB_REJECTED;
+    }
+    if (s_job_active || uxQueueMessagesWaiting(s_job_queue) > 0) {
         return STATEMACHINE_RESULT_JOB_REJECTED;
     }
     request.job = STATEMACHINE_JOB_RECEIVE;
@@ -343,6 +350,9 @@ statemachine_result_t statemachine_jobtx(void)
     statemachine_request_t request = {0};
 
     if (s_job_queue == NULL) {
+        return STATEMACHINE_RESULT_JOB_REJECTED;
+    }
+    if (s_job_active || uxQueueMessagesWaiting(s_job_queue) > 0) {
         return STATEMACHINE_RESULT_JOB_REJECTED;
     }
     request.job = STATEMACHINE_JOB_TRANSMIT;

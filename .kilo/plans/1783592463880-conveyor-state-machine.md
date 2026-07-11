@@ -1,204 +1,236 @@
-# Conveyor State Machine Result And Status Plan
+# MQTT Layer Implementation Plan
 
 ## Goal
-Update the state-machine API so callers get the final job outcome directly from `statemachine_jobrx()` / `statemachine_jobtx()`, and add one small checker API for live status polling.
+Implement `main/tasks/mqtt.c` as the backend-facing MQTT layer described by `docs/conveyor-mqtt-topic-system.md`, following the same style as `console.c`: one command table, one handler switch, private parsing/publishing internals, and a small public header.
 
-This is not a push stream. The live view is polling-based: whoever wants updates calls `statemachine_get_status()` repeatedly while a job is running.
+Do not implement source changes in planning mode. This plan is for the implementation-capable agent.
 
-## Public API
-Keep the API small. The public functions should be:
+## Fixed Decisions
+- Build MQTT topics from `APP_MOTOR_MACHINE_ID`; the doc's `C0` examples are examples, not hard-coded values. Current firmware will publish/subscribe under `C1` because `config.h` sets `APP_MOTOR_MACHINE_ID "C1"`.
+- Keep `main/tasks/mqtt.h` limited to `mqtt_init()` and `mqtt_task()` only. Do not add MQTT helper functions to the header.
+- Implement initial MQTT commands only:
+  - `ack_test`
+  - `tray_receive`
+  - `tray_transmit`
+  - `get_commands`
+- Do not implement `stop` or `clear_error` yet. They were examples from an older state-machine design and need a real safety/stopped-state API before becoming active MQTT commands.
+- Use `cJSON` for JSON parsing and publishing.
+- MQTT owns WiFi setup for this checkpoint.
+- Use the normal ESP-IDF WiFi/NVS path: implement minimal `nvs_flash_init()` in `nvs_init()` because WiFi normally expects NVS. Comment clearly that this is the minimal WiFi-required NVS setup and future persistence will expand it.
+- MQTT event callbacks must not block on tray jobs. The MQTT data callback parses/enqueues commands; `mqtt_task()` executes commands and may block on `statemachine_jobrx()` / `statemachine_jobtx()`.
+- Add one private internal MQTT status publisher task so `node_status` can keep updating while `mqtt_task()` is blocked waiting for a tray job result. Do not expose this task in `mqtt.h`.
+- If malformed/unknown commands include a usable `command_id`, publish `failure` with that ID. If no `command_id` exists, log and drop because the backend correlation ID is missing.
+- Reject `tray_receive` / `tray_transmit` as busy when `statemachine_get_status()` is not `STATEMACHINE_STATUS_IDLE`.
+- `get_commands` returns the core four commands with empty `required_params` and `optional_params` arrays.
+- Node status is polling-based: the private status task polls `statemachine_get_status()` and tray-present sensors, publishing `node_status` only when backend status or `has_tray` changes.
+- Comments should be block-level rationale comments for each edited logical block, not one comment per changed line.
 
-- `esp_err_t statemachine_init(void);`
-- `void statemachine_task(void *arg);`
-- `statemachine_result_t statemachine_jobrx(void);`
-- `statemachine_result_t statemachine_jobtx(void);`
-- `statemachine_status_t statemachine_get_status(void);`
+## Files To Edit
+- `main/tasks/mqtt.c`
+- `main/tasks/mqtt.h` only for comment updates if needed; no new function declarations.
+- `main/tasks/nvs.c`
+- `main/CMakeLists.txt`
+- Optionally `README.md` / `docs/progress.md` only if the implementation request includes documentation updates. Do not add docs unless requested by the implementation prompt.
 
-Add public result enum in `main/statemachine/statemachine.h`:
+## Component Requirements
+Update `main/CMakeLists.txt` `REQUIRES` to include:
+- `mqtt`
+- `json`
+- `nvs_flash`
 
-- `STATEMACHINE_RESULT_RX_DONE`
-- `STATEMACHINE_RESULT_TX_DONE`
-- `STATEMACHINE_RESULT_TRAY_ALREADY_PRESENT`
-- `STATEMACHINE_RESULT_TRAY_NOT_RECEIVED`
-- `STATEMACHINE_RESULT_TRAY_TRANSFER_STUCK`
-- `STATEMACHINE_RESULT_NO_TRAY_PRESENT`
-- `STATEMACHINE_RESULT_TRAY_HANDOFF_STUCK`
-- `STATEMACHINE_RESULT_EMERGENCY_STOP`
-- `STATEMACHINE_RESULT_JOB_TIMEOUT`
-- `STATEMACHINE_RESULT_JOB_REJECTED`
+Existing requirements already include WiFi/event/netif components.
 
-Add public status enum in `main/statemachine/statemachine.h`:
+## Topic Contract
+Build these private topic strings in `mqtt.c` from `APP_MOTOR_MACHINE_ID`:
+- Command: `factory/conveyor/<APP_MOTOR_MACHINE_ID>/command`
+- Result: `factory/conveyor/<APP_MOTOR_MACHINE_ID>/result`
+- Node status: `factory/conveyor/<APP_MOTOR_MACHINE_ID>/node_status`
 
-- `STATEMACHINE_STATUS_IDLE`
-- `STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY`
-- `STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY`
-- `STATEMACHINE_STATUS_RECEIVE_TRAY_RECEIVED`
-- `STATEMACHINE_STATUS_TRANSMIT_TRANSMITTING_TRAY`
-- `STATEMACHINE_STATUS_TRANSMIT_TRAY_HANDED_OFF`
+Do not use `APP_MOTOR_TOPIC_NAME` as the only topic segment because the active spec needs three fixed topic names.
 
-Do not expose private transition functions.
+## Public Header Boundary
+Keep `main/tasks/mqtt.h` as:
+- `esp_err_t mqtt_init(void);`
+- `void mqtt_task(void *arg);`
 
-## Semantics
-`statemachine_jobrx()` and `statemachine_jobtx()` should block until their queued job finishes, then return the terminal result.
+The implementation can add private `static` functions in `mqtt.c` only when they materially reduce duplicated code. Avoid many tiny helpers, but callback/task entrypoints required by ESP-IDF and FreeRTOS are acceptable.
 
-`statemachine_get_status()` should return the current live state immediately without blocking.
+## Suggested Private Data
+In `mqtt.c`, keep static/private state only:
+- MQTT client handle.
+- MQTT command queue handle.
+- MQTT status task handle or started flag.
+- Connected flag.
+- Command/result/status topic strings.
+- Last published backend status and last `has_tray` value.
 
-Important behavior:
-
-- If the queue does not exist, job calls return `STATEMACHINE_RESULT_JOB_REJECTED`.
-- If the job request cannot be queued, job calls return `STATEMACHINE_RESULT_JOB_REJECTED`.
-- If response synchronization cannot be created, job calls return `STATEMACHINE_RESULT_JOB_REJECTED`.
-- If a job is accepted, the caller waits until that exact job completes and receives that exact job's result.
-- Multiple queued callers must not receive each other's results.
-
-## Implementation Shape
-Use a queue item that includes both the requested job and a response handle:
-
+Suggested command queue item:
 ```c
+typedef enum {
+    MQTT_COMMAND_ACK_TEST,
+    MQTT_COMMAND_TRAY_RECEIVE,
+    MQTT_COMMAND_TRAY_TRANSMIT,
+    MQTT_COMMAND_GET_COMMANDS,
+} mqtt_command_id_t;
+
 typedef struct {
-    statemachine_job_t job;
-    QueueHandle_t response_queue;
-} statemachine_request_t;
+    mqtt_command_id_t command;
+    char command_id[MQTT_COMMAND_ID_MAX_LEN];
+} mqtt_command_t;
 ```
 
-Recommended job call flow:
-
-1. `statemachine_jobrx()` / `statemachine_jobtx()` creates a one-item response queue for `statemachine_result_t`.
-2. It sends a `statemachine_request_t` to the state-machine queue.
-3. It waits on the response queue until the task sends the final result.
-4. It deletes the response queue.
-5. It returns the final result.
-
-Recommended task flow:
-
-1. Outer state starts as `STATEMACHINE_STATUS_IDLE`.
-2. In idle, wait for a `statemachine_request_t`.
-3. For receive request, run the receive state machine and capture its `statemachine_result_t`.
-4. For transmit request, run the transmit state machine and capture its `statemachine_result_t`.
-5. Send the result to the request's response queue.
-6. Set status back to `STATEMACHINE_STATUS_IDLE`.
-
-Use `portMAX_DELAY` while waiting for an accepted job's response because each job has its own internal timeout.
-
-## Status Checker
-Add one file-static live status variable in `statemachine.c`, for example:
-
+Use a command table similar to `console.c`:
 ```c
-static volatile statemachine_status_t s_status = STATEMACHINE_STATUS_IDLE;
+static const mqtt_command_entry_t s_commands[] = {
+    {"ack_test", MQTT_COMMAND_ACK_TEST},
+    {"tray_receive", MQTT_COMMAND_TRAY_RECEIVE},
+    {"tray_transmit", MQTT_COMMAND_TRAY_TRANSMIT},
+    {"get_commands", MQTT_COMMAND_GET_COMMANDS},
+};
 ```
 
-Update `s_status` at every real state transition:
+## WiFi/MQTT Lifecycle
+`mqtt_init()` should:
+1. Create the private MQTT command queue.
+2. Build topic strings.
+3. Initialize default netif and event loop if they are not already initialized. Handle `ESP_ERR_INVALID_STATE` as non-fatal for event loop creation.
+4. Create default WiFi station netif.
+5. Initialize WiFi station mode with `APP_MOTOR_WIFI_SSID` and `APP_MOTOR_WIFI_PASS`.
+6. Register WiFi/IP event handler(s).
+7. Configure the MQTT client with `APP_MOTOR_MQTT_URI` and `APP_MOTOR_MQTT_CLIENT_ID`.
+8. Register the MQTT event handler.
+9. Start WiFi.
+10. Start one private MQTT status publisher task, or lazily start it from `mqtt_task()` once. Keep this private to `mqtt.c`.
 
-- Idle queue wait: `STATEMACHINE_STATUS_IDLE`
-- Receive waiting: `STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY`
-- Receive moving: `STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY`
-- Receive done state before acknowledgement: `STATEMACHINE_STATUS_RECEIVE_TRAY_RECEIVED`
-- Transmit moving: `STATEMACHINE_STATUS_TRANSMIT_TRANSMITTING_TRAY`
-- Transmit handed off before acknowledgement: `STATEMACHINE_STATUS_TRANSMIT_TRAY_HANDED_OFF`
+WiFi event handling:
+- On station start/disconnect, attempt/re-attempt connect.
+- On got IP, start the MQTT client if not already started.
 
-`statemachine_get_status()` should simply return `s_status`.
+MQTT event handling:
+- On connect, mark connected and subscribe to command topic.
+- On disconnect, mark disconnected.
+- On data, parse the JSON payload and enqueue a private `mqtt_command_t` if valid.
 
-This provides polling-based live updates without callbacks and without adding a second result API.
+## Command Parsing Behavior
+Expected command payload:
+```json
+{
+  "command_id": "cmd_tray_transmit_001",
+  "command": "tray_transmit"
+}
+```
 
-## Function Count Decisions
-Keep these private functions:
+Parsing rules:
+- `command_id` must be a string and fit the fixed command-id buffer.
+- `command` must be a string and match `s_commands[]`.
+- Ignore unsupported optional parameters in this checkpoint; current state-machine APIs do not accept movement params.
+- For valid parsed commands, publish `received` only after enqueue succeeds.
+- If enqueue fails and command_id exists, publish `failure` with message like `rejected: mqtt command queue full`.
+- If command is unknown but command_id exists, publish `failure` with message like `unknown command`.
+- If command_id is missing/invalid, log and do not publish a result.
 
-- `read_tray_sensors()`: one protected sensor snapshot helper.
-- `finish_job()`: one terminal stop/log helper.
-- `start_moving_upstream()`: one movement helper that disables PID ownership and calls `set_motor()`.
-- `run_receive_job()`: receive state machine, now returns `statemachine_result_t`.
-- `run_transmit_job()`: transmit state machine, now returns `statemachine_result_t`.
+## Result Publishing
+Publish to `result` topic using the spec fields:
+```json
+{
+  "command_id": "...",
+  "command_status": "received|success|failure",
+  "message": "..."
+}
+```
 
-Remove these private helpers:
+Suggested mappings:
+- `ack_test`: `received`, then `success` with `ack test ok`.
+- `tray_receive`: `received`, then `success` if `STATEMACHINE_RESULT_RX_DONE`; otherwise `failure` with the state-machine result token.
+- `tray_transmit`: `received`, then `success` if `STATEMACHINE_RESULT_TX_DONE`; otherwise `failure` with the state-machine result token.
+- `get_commands`: `received`, then `success` with a `commands` array for the core four commands.
 
-- `submit_job()`: inline queue submission in `statemachine_jobrx()` and `statemachine_jobtx()`.
-- `timeout_elapsed()`: inline timeout comparisons using a local `TickType_t now` in each state block.
-- `result_name()`: no longer needed if `finish_job()` receives the result enum and logs with a `switch`, or if each terminal block logs explicitly.
+Keep result enum string mapping private in `mqtt.c`; do not add a state-machine string API.
 
-Keep `statemachine_result_t`, but move it to the public header because callers now receive it.
+## MQTT Command Task Loop
+`mqtt_task()` should run the command handler loop:
+1. Wait for private MQTT command queue items.
+2. Handle each command through one switch, similar to `console.c`.
+3. Publish final results.
 
-## State Machine Behavior
-Receive:
+For tray commands:
+- Before calling `statemachine_jobrx()` / `statemachine_jobtx()`, check `statemachine_get_status()`.
+- If not idle, publish final `failure` with `rejected: busy - conveyor job already active`.
+- If idle, call the blocking state-machine job function and publish success/failure based on the returned result.
 
-1. `statemachine_jobrx()` queues a receive request and waits for the final result.
-2. Task sets status to `STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY`.
-3. If either sensor detects a tray immediately, return `STATEMACHINE_RESULT_TRAY_ALREADY_PRESENT`.
-4. Wait for downstream detection.
-5. If downstream detection times out, return `STATEMACHINE_RESULT_TRAY_NOT_RECEIVED`.
-6. Start moving upstream.
-7. Set status to `STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY`.
-8. Wait for upstream detection.
-9. If upstream detection times out, stop motor and return `STATEMACHINE_RESULT_TRAY_TRANSFER_STUCK`.
-10. Set status to `STATEMACHINE_STATUS_RECEIVE_TRAY_RECEIVED`.
-11. Stop motor and return `STATEMACHINE_RESULT_RX_DONE`.
-12. If whole-job timeout fires in any active phase, stop motor if needed and return `STATEMACHINE_RESULT_JOB_TIMEOUT`.
+Do not perform node-status polling in this same task, because tray job calls block until completion.
 
-Transmit:
+## Private MQTT Status Task
+Create a private static FreeRTOS task entrypoint in `mqtt.c`, for example `mqtt_status_task(void *arg)`.
 
-1. `statemachine_jobtx()` queues a transmit request and waits for the final result.
-2. If neither sensor detects a tray immediately, return `STATEMACHINE_RESULT_NO_TRAY_PRESENT`.
-3. Start moving upstream.
-4. Set status to `STATEMACHINE_STATUS_TRANSMIT_TRANSMITTING_TRAY`.
-5. Wait until downstream and upstream sensors both clear.
-6. If handoff timeout fires, stop motor and return `STATEMACHINE_RESULT_TRAY_HANDOFF_STUCK`.
-7. Set status to `STATEMACHINE_STATUS_TRANSMIT_TRAY_HANDED_OFF`.
-8. Stop motor and return `STATEMACHINE_RESULT_TX_DONE`.
-9. If whole-job timeout fires in any active phase, stop motor and return `STATEMACHINE_RESULT_JOB_TIMEOUT`.
+This task should:
+1. Poll `statemachine_get_status()` and tray-present sensors at a concise private interval.
+2. Derive backend `status` and `has_tray`.
+3. Publish `node_status` only when backend status or `has_tray` changed.
+4. Skip publish when MQTT is disconnected.
 
-After the task sends any terminal result back to the waiting caller, set status to `STATEMACHINE_STATUS_IDLE`.
+This keeps live status updates moving even while `mqtt_task()` is blocked inside `statemachine_jobrx()` / `statemachine_jobtx()`.
 
-## Console Changes
-Update console `jobrx` and `jobtx` commands:
+## Node Status Publishing
+Read tray presence from `motors[0].downstream_sensor` and `motors[0].upstream_sensor` under `motor_mutex`.
 
-- They now block until completion.
-- They print the final result returned by the state-machine API.
-- They can optionally print the current status before/after the call, but do not add a console streaming loop unless explicitly requested.
+Derive backend `status` from `statemachine_get_status()`:
+- `STATEMACHINE_STATUS_IDLE` -> `idle`
+- `STATEMACHINE_STATUS_RECEIVE_*` -> `receiving`
+- `STATEMACHINE_STATUS_TRANSMIT_*` -> `transmitting`
+- Unknown/default -> `unknown`
 
-If human-readable result strings are needed in console output, implement a small console-local switch or print stable numeric enum values. Do not add another state-machine API function just for string conversion.
+Publish payload:
+```json
+{
+  "id": "<APP_MOTOR_MACHINE_ID>",
+  "status": "idle|receiving|transmitting|unknown",
+  "has_tray": true
+}
+```
 
-## Naming Boundary
-Use upstream/downstream notation for all tray/job/state-machine concepts.
+Do not include raw sensor values or internal state enum names in `node_status`.
 
-Do not use S0/S1, positive/negative, forward/reverse, or raw `dir` wording in state-machine variables, logs, comments, helper names, or operator-facing job commands.
+## NVS Plan
+Update `main/tasks/nvs.c` from no-op to minimal WiFi-required NVS initialization:
+- Include `nvs_flash.h`.
+- Call `nvs_flash_init()`.
+- If it returns no-free-pages/new-version errors, erase and initialize again.
+- Keep comments clear that this is only the minimal NVS setup needed by WiFi and will be expanded later for persistence/config storage.
 
-Keep low-level motor-driver terminology where it already belongs:
+## Comment Requirements For Implementation
+For every logical block edited for this MQTT prompt, add a concise rationale comment explaining why that block exists or why that code path is touched.
 
-- `set_motor(motor_id, pwm, direction)` remains the low-level hardware API.
-- `motor_t.direction` remains low-level shared motor output state.
-- `APP_MOTOR_POSITIVE_DIR_LEVEL` and `APP_MOTOR_NEGATIVE_DIR_LEVEL` remain low-level electrical direction constants for hardware/PID compatibility.
-- `rpwm/lpwm/ren/len` remain BTS7960 electrical pin names.
-- Console `setmotor <motor_id> <pwm> <dir>` remains a low-level diagnostic escape hatch.
+Examples:
+- Before topic construction: explain topics are built from `APP_MOTOR_MACHINE_ID` so firmware can be retargeted by config.
+- Before command table: explain MQTT follows console's table/switch style for easy command additions.
+- Before command queue enqueue: explain callbacks avoid blocking on tray movement.
+- Before NVS init: explain WiFi needs normal ESP-IDF NVS initialization and future persistence will expand it.
 
-## Comment Rules
-Keep comments concise:
-
-- Each remaining function gets one short purpose comment.
-- Each major state block gets one short comment.
-- Add comments before project function calls only:
-  - `read_tray_sensors()`
-  - `start_moving_upstream()`
-  - `finish_job()`
-  - `run_receive_job()`
-  - `run_transmit_job()`
-  - `set_motor()` and `stop_motor()` inside helpers
-- Do not comment library/FreeRTOS calls unless the reason is not obvious.
+Avoid one comment per line.
 
 ## Validation Plan
 - Run `git diff --check`.
-- Confirm public API is exactly init/task/jobrx/jobtx/get_status plus public result/status types.
-- Confirm `statemachine_jobrx()` and `statemachine_jobtx()` return `statemachine_result_t`, not `bool`.
-- Confirm every accepted queued request receives exactly one response.
-- Confirm `s_status` returns to `STATEMACHINE_STATUS_IDLE` after every terminal result.
-- Confirm removed private helpers are gone:
-  - `submit_job`
-  - `timeout_elapsed`
-  - `result_name`
-- Confirm `main/statemachine/*` still has no `S0`, `S1`, positive/negative conveyor naming, or removed generic event API references.
-- Try `idf.py build` only if the ESP-IDF environment is available without destructive cleanup.
-- Do not run `idf.py fullclean` unless explicitly approved.
+- Build with ESP-IDF if the local environment allows it without destructive cleanup.
+- If build is blocked by the existing Python path mismatch requiring `idf.py fullclean`, report that and do not run cleanup unless explicitly approved.
+- Static checks:
+  - `mqtt.h` exposes only `mqtt_init()` and `mqtt_task()`.
+  - `mqtt.c` contains the core four command table entries.
+  - No blocking `statemachine_jobrx()` / `statemachine_jobtx()` calls occur inside the MQTT event callback.
+  - Topics are built from `APP_MOTOR_MACHINE_ID`.
+  - `node_status` publishes only backend status and `has_tray`.
+- Runtime/manual checks:
+  - Boot connects to WiFi and broker.
+  - MQTT subscribes to `factory/conveyor/<id>/command`.
+  - `ack_test` publishes `received` then `success`.
+  - `tray_receive` publishes `received` then final success/failure.
+  - `tray_transmit` publishes `received` then final success/failure.
+  - `get_commands` publishes `received` then success with core four commands.
+  - Invalid JSON with command_id publishes failure; invalid JSON without command_id logs/drops.
+  - `node_status` publishes on state/tray changes while tray jobs are running.
 
 ## Risks
-- Blocking job calls must not be called from the state-machine task itself, or they would deadlock. Document this in the header comment.
-- A polling status checker is not a true push stream. Consumers must poll periodically for live updates.
-- Dynamic response queue creation can fail; return `STATEMACHINE_RESULT_JOB_REJECTED` in that case.
-- Multiple callers require per-request response queues so results do not get mixed.
+- WiFi/NVS setup changes touch boot behavior. Keep NVS initialization minimal and documented.
+- The private MQTT status task adds one more task, but avoids expanding the public API or making state-machine jobs non-blocking.
+- Optional command parameters in the doc are intentionally ignored until state-machine APIs accept speed/timeout parameters.
+- Since `stop` and `clear_error` are intentionally omitted, backend callers must not rely on those commands until the safety/stopped-state layer exists.

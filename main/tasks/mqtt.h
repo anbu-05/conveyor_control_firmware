@@ -2,14 +2,14 @@
 
 /*
  * MQTT task public API.
- * MQTT is deferred until local motion works; when enabled it will parse backend
- * payloads into the same typed events used by console commands.
+ * Backend networking stays behind this small boundary; command parsing,
+ * publishing, and private status polling remain internal to tasks/mqtt.c.
  */
 
 #include "esp_err.h"
 
-/* Initializes MQTT state; main.c starts mqtt_task() with xTaskCreate(). */
+/* Initializes WiFi/MQTT state; main.c starts mqtt_task() with xTaskCreate(). */
 esp_err_t mqtt_init(void);
 
-/* Runs MQTT handling after main.c creates this task. */
+/* Runs blocking MQTT command handling after main.c creates this task. */
 void mqtt_task(void *arg);
