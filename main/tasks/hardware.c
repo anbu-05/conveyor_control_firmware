@@ -214,6 +214,9 @@ esp_err_t hardware_init(const char *motor_id)
 void hardware_task(void *arg)
 {
     (void)arg;
+    /* Keep speed derivation local to the hardware publisher so motor_t only stores public snapshots. */
+    static int previous_position[APP_MOTOR_COUNT] = {0};
+    static bool has_previous_position[APP_MOTOR_COUNT] = {false};
 
     while (true) {
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
@@ -227,10 +230,16 @@ void hardware_task(void *arg)
                 xSemaphoreTake(motor_mutex, portMAX_DELAY);
             }
 
-            /* Publish the latest PCNT count and offset-corrected position. */
+            /* Publish speed from the same offset-corrected position path so PID and diagnostics share one basis. */
             if (motors[i].pcnt_unit != NULL && pcnt_unit_get_count(motors[i].pcnt_unit, &encoder_count) == ESP_OK) {
+                const int current_position = encoder_count + motors[i].position_offset;
+
                 motors[i].encoder_count = encoder_count;
-                motors[i].current_position = encoder_count + motors[i].position_offset;
+                motors[i].current_position = current_position;
+                motors[i].speed = has_previous_position[i] ?
+                                  ((current_position - previous_position[i]) * 1000) / APP_MOTOR_CONTROL_PERIOD_MS : 0;
+                previous_position[i] = current_position;
+                has_previous_position[i] = true;
             }
 
             /* Store raw sensor GPIO levels for diagnostics and safety logic. */

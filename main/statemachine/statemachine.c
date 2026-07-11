@@ -139,8 +139,9 @@ static bool start_moving_upstream(void)
     if (motor_mutex != NULL) {
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
     }
-    motors[0].position_control = false;
+    motors[0].PID_control = false;
     motors[0].target_position = motors[0].current_position;
+    motors[0].target_speed = 0;
     motors[0].integral = 0.0f;
     motors[0].previous_error = 0.0f;
     motors[0].has_previous_error = false;

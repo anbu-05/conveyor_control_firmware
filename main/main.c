@@ -51,7 +51,8 @@ void app_main(void)
     log_if_error("app_state_init", app_state_init());
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
         log_if_error("hardware_init", hardware_init(motors[i].id));
-        log_if_error("motor_pid_init", motor_pid_init(motors[i].id));
+        /* Start in position mode so existing boot behavior stays unchanged until speed mode is selected intentionally. */
+        log_if_error("motor_pid_init", motor_pid_init(motors[i].id, MOTOR_PID_MODE_POSITION));
     }
     log_if_error("safety_init", safety_init());
     log_if_error("statemachine_init", statemachine_init());

@@ -36,12 +36,15 @@ typedef enum {
     CONSOLE_COMMAND_SETMOTOR,
     CONSOLE_COMMAND_JOBRX,
     CONSOLE_COMMAND_JOBTX,
-    CONSOLE_COMMAND_GETSTATUS,
+    CONSOLE_COMMAND_GET_SMSTATUS,
     CONSOLE_COMMAND_STOP,
     CONSOLE_COMMAND_STOPMOTOR,
     CONSOLE_COMMAND_SETPOSITION,
     CONSOLE_COMMAND_GETPOSITION,
-    CONSOLE_COMMAND_POSITIONCONTROL,
+    CONSOLE_COMMAND_PID_CONTROL,
+    CONSOLE_COMMAND_SETSPEED,
+    CONSOLE_COMMAND_GETSPEED,
+    CONSOLE_COMMAND_GET_PIDMODE,
     CONSOLE_COMMAND_SETPID,
     CONSOLE_COMMAND_GETPID,
     CONSOLE_COMMAND_SETOFFSET,
@@ -67,12 +70,15 @@ static const console_command_entry_t s_commands[] = {
     {"setmotor", "Set raw diagnostic motor output: setmotor <motor_id> <pwm> <dir>", CONSOLE_COMMAND_SETMOTOR},
     {"jobrx", "Queue tray receive job: jobrx", CONSOLE_COMMAND_JOBRX},
     {"jobtx", "Queue tray transmit job: jobtx", CONSOLE_COMMAND_JOBTX},
-    {"getstatus", "Get state-machine status: getstatus", CONSOLE_COMMAND_GETSTATUS},
+    {"get_smstatus", "Get state-machine status: get_smstatus", CONSOLE_COMMAND_GET_SMSTATUS},
     {"stop", "Stop all motors: stop", CONSOLE_COMMAND_STOP},
     {"stopmotor", "Stop raw motor output: stopmotor <motor_id>", CONSOLE_COMMAND_STOPMOTOR},
     {"setposition", "Set PID target position: setposition <motor_id> <position>", CONSOLE_COMMAND_SETPOSITION},
     {"getposition", "Get current position: getposition <motor_id>", CONSOLE_COMMAND_GETPOSITION},
-    {"positioncontrol", "Enable or disable PID position control: positioncontrol <motor_id> <0|1>", CONSOLE_COMMAND_POSITIONCONTROL},
+    {"pid_control", "Enable or disable PID ownership: pid_control <motor_id> <0|1>", CONSOLE_COMMAND_PID_CONTROL},
+    {"setspeed", "Set PID target speed: setspeed <motor_id> <speed>", CONSOLE_COMMAND_SETSPEED},
+    {"getspeed", "Get current speed: getspeed <motor_id>", CONSOLE_COMMAND_GETSPEED},
+    {"get_pidmode", "Get active PID mode: get_pidmode <motor_id>", CONSOLE_COMMAND_GET_PIDMODE},
     {"setpid", "Set per-motor PID gains: setpid <motor_id> <kp_milli> <ki_milli> <kd_milli>", CONSOLE_COMMAND_SETPID},
     {"getpid", "Get per-motor PID gains: getpid <motor_id>", CONSOLE_COMMAND_GETPID},
     {"setoffset", "Set position offset: setoffset <motor_id> <offset>", CONSOLE_COMMAND_SETOFFSET},
@@ -120,8 +126,8 @@ static int find_motor_index(const char *motor_id)
     return -1;
 }
 
-/* Enables/disables PID ownership for one motor from console commands. */
-static esp_err_t set_console_position_control(const char *motor_id, bool enabled)
+/* Enables/disables PID ownership through the pid_control console command. */
+static esp_err_t set_console_pid_control(const char *motor_id, bool enabled)
 {
     int motor_index = find_motor_index(motor_id);
 
@@ -132,8 +138,9 @@ static esp_err_t set_console_position_control(const char *motor_id, bool enabled
     if (motor_mutex != NULL) {
         xSemaphoreTake(motor_mutex, portMAX_DELAY);
     }
-    motors[motor_index].position_control = enabled;
+    motors[motor_index].PID_control = enabled;
     motors[motor_index].target_position = motors[motor_index].current_position;
+    motors[motor_index].target_speed = 0;
     motors[motor_index].integral = 0.0f;
     motors[motor_index].previous_error = 0.0f;
     motors[motor_index].has_previous_error = false;
@@ -232,7 +239,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the parsed raw motor output to hardware.c. */
-        err = set_console_position_control(argv[1], false);
+        err = set_console_pid_control(argv[1], false);
         if (err == ESP_OK) {
             err = set_motor(argv[1], pwm, direction);
         }
@@ -275,7 +282,7 @@ static int handle_console_command(int argc, char **argv)
         return 0;
     }
 
-    case CONSOLE_COMMAND_GETSTATUS:
+    case CONSOLE_COMMAND_GET_SMSTATUS:
     {
         statemachine_status_t status = STATEMACHINE_STATUS_IDLE;
 
@@ -297,7 +304,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-            (void)set_console_position_control(motors[i].id, false);
+            (void)set_console_pid_control(motors[i].id, false);
             /* Hand each configured motor id to hardware.c so all PWM outputs are cut. */
             stop_motor(motors[i].id);
         }
@@ -312,7 +319,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the stop request to hardware.c so PWM is cut immediately. */
-        err = set_console_position_control(argv[1], false);
+        err = set_console_pid_control(argv[1], false);
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -324,7 +331,7 @@ static int handle_console_command(int argc, char **argv)
     case CONSOLE_COMMAND_SETPOSITION: {
         int motor_index = -1;
         int target_position = 0;
-        bool position_control = false;
+        bool PID_control = false;
 
         /* setposition publishes PID intent for the per-motor PID task. */
         /* Parse the target position string before calling the PID API. */
@@ -341,19 +348,19 @@ static int handle_console_command(int argc, char **argv)
         if (motor_mutex != NULL) {
             xSemaphoreTake(motor_mutex, portMAX_DELAY);
         }
-        position_control = motors[motor_index].position_control;
+        PID_control = motors[motor_index].PID_control;
         if (motor_mutex != NULL) {
             xSemaphoreGive(motor_mutex);
         }
-        if (!position_control) {
-            printf("ERR POSITION_CONTROL_DISABLED\n");
+        if (!PID_control) {
+            printf("ERR PID_CONTROL_DISABLED\n");
             return 0;
         }
 
         /* Hand the parsed target position to pid.c. */
         err = set_position(argv[1], target_position);
         if (err == ESP_ERR_INVALID_STATE) {
-            printf("ERR POSITION_CONTROL_DISABLED\n");
+            printf("ERR PID_CONTROL_DISABLED\n");
             return 0;
         }
         if (err != ESP_OK) {
@@ -385,7 +392,79 @@ static int handle_console_command(int argc, char **argv)
         return 0;
     }
 
-    case CONSOLE_COMMAND_POSITIONCONTROL: {
+    case CONSOLE_COMMAND_SETSPEED: {
+        int target_speed = 0;
+
+        /* setspeed exists so the new speed controller can be commissioned without raw shared-state writes. */
+        if (argc != 3 || !parse_int_arg(argv[2], &target_speed)) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Hand the parsed target speed to pid.c, matching setposition's ownership boundary. */
+        err = set_speed(argv[1], target_speed);
+        if (err == ESP_ERR_INVALID_STATE) {
+            printf("ERR PID_CONTROL_DISABLED\n");
+            return 0;
+        }
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK SETSPEED motor=%s speed=%d\n", argv[1], target_speed);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_GETSPEED: {
+        int speed = 0;
+
+        /* getspeed reports hardware_task()'s latest counts-per-second snapshot for tuning. */
+        if (argc != 2) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Keep speed reads behind pid.c for symmetry with the existing position API. */
+        err = get_speed(argv[1], &speed);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK SPEED motor=%s speed=%d\n", argv[1], speed);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_GET_PIDMODE: {
+        int motor_index = -1;
+        motor_pid_mode_t pid_mode = MOTOR_PID_MODE_POSITION;
+
+        /* get_pidmode reads the controller selection directly so no extra public PID helper is needed. */
+        if (argc != 2) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+        motor_index = find_motor_index(argv[1]);
+        if (motor_index < 0) {
+            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+            return 0;
+        }
+
+        if (motor_mutex != NULL) {
+            xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        }
+        pid_mode = motors[motor_index].pid_mode;
+        if (motor_mutex != NULL) {
+            xSemaphoreGive(motor_mutex);
+        }
+
+        printf("OK PIDMODE motor=%s mode=%s\n", argv[1],
+               pid_mode == MOTOR_PID_MODE_SPEED ? "speed" : "position");
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_PID_CONTROL: {
         int enabled = 0;
 
         if (argc != 3 || !parse_int_arg(argv[2], &enabled) || (enabled != 0 && enabled != 1)) {
@@ -393,13 +472,13 @@ static int handle_console_command(int argc, char **argv)
             return 0;
         }
 
-        err = set_console_position_control(argv[1], enabled != 0);
+        err = set_console_pid_control(argv[1], enabled != 0);
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
         }
 
-        printf("OK POSITIONCONTROL motor=%s enabled=%d\n", argv[1], enabled);
+        printf("OK PID_CONTROL motor=%s enabled=%d\n", argv[1], enabled);
         return 0;
     }
 

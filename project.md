@@ -417,7 +417,7 @@ Current high-level job states:
 - PID speed control currently has P and optional D terms. Integral control is not implemented yet.
 - Speed control uses a measured speed/PWM table plus P/D trim. Actual PWM changes by `CONVEYOR_PWM_SLEW_STEP` each motor PID tick.
 - Speed measurement uses a 5-sample moving average without low startup bias.
-- Encoder filtering, zeroing, MQTT publishing, and position control are not implemented yet.
+- Encoder filtering, zeroing, MQTT publishing, and PID control are not implemented yet.
 
 ## Next Useful Commands
 

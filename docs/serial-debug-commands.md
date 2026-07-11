@@ -152,7 +152,7 @@ Effect:
 
 Note:
 
-- This command does not currently enable `position_control` by itself.
+- This command does not currently enable `PID_control` by itself.
 
 Success output:
 
@@ -194,6 +194,132 @@ Error outputs:
 ```text
 ERR BAD_ARGS
 ERR ESP_ERR_INVALID_ARG
+```
+
+## `setspeed M0 250`
+
+Sets one motor's PID target speed and switches that motor's PID mode to speed.
+
+Input:
+
+```text
+setspeed M0 250
+```
+
+Arguments:
+
+- `M0`: motor id.
+- `250`: target encoder counts per second.
+
+Effect:
+
+- Calls `set_speed("M0", 250)`.
+- Updates `motors[].target_speed`.
+- Selects `MOTOR_PID_MODE_SPEED` so PID error becomes `target_speed - speed`.
+
+Success output:
+
+```text
+OK SETSPEED motor=M0 speed=250
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR PID_CONTROL_DISABLED
+ERR ESP_ERR_INVALID_ARG
+```
+
+## `getspeed M0`
+
+Reads one motor's latest measured speed.
+
+Input:
+
+```text
+getspeed M0
+```
+
+Effect:
+
+- Calls `get_speed("M0", &speed)`.
+- Reads `motors[].speed`, which `hardware_task()` publishes from encoder-position deltas.
+
+Success output:
+
+```text
+OK SPEED motor=M0 speed=250
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR ESP_ERR_INVALID_ARG
+```
+
+## `get_pidmode M0`
+
+Reads whether one motor's PID task is currently using position or speed error.
+
+Input:
+
+```text
+get_pidmode M0
+```
+
+Effect:
+
+- Reads `motors[].pid_mode` under `motor_mutex`.
+- Reports `position` after `setposition` or boot default.
+- Reports `speed` after `setspeed`.
+
+Success output:
+
+```text
+OK PIDMODE motor=M0 mode=speed
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR ESP_ERR_NOT_FOUND
+```
+
+## `pid_control M0 1`
+
+Enables or disables PID ownership for one motor.
+
+Input:
+
+```text
+pid_control M0 1
+```
+
+Arguments:
+
+- `M0`: motor id.
+- `1`: enable PID ownership. Use `0` to leave output to raw hardware commands.
+
+Effect:
+
+- Updates `motors[].PID_control`.
+- Resets PID runtime memory so old integral/derivative state does not resume after manual mode.
+- Resets target speed to zero when changing ownership.
+
+Success output:
+
+```text
+OK PID_CONTROL motor=M0 enabled=1
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR ESP_ERR_NOT_FOUND
 ```
 
 ## `getsensors M0`
@@ -260,34 +386,61 @@ ERR BAD_ARGS
 ERR ESP_ERR_INVALID_ARG
 ```
 
-## `setk M0 0.500 0.000 0.050`
+## `setpid M0 500 0 50`
 
 Sets live PID gains for one motor.
 
 Input:
 
 ```text
-setk M0 0.500 0.000 0.050
+setpid M0 500 0 50
 ```
 
 Arguments:
 
 - `M0`: motor id.
-- `0.500`: live `kp`.
-- `0.000`: live `ki`.
-- `0.050`: live `kd`.
+- `500`: live `kp` in milli-units.
+- `0`: live `ki` in milli-units.
+- `50`: live `kd` in milli-units.
 
 Effect:
 
-- Calls `setk("M0", kp, ki, kd)`.
-- Updates live PID gains only.
-- Does not save to NVS.
+- Calls `set_pid_gains("M0", 500, 0, 50)`.
+- Updates `motors[].kp`, `motors[].ki`, and `motors[].kd`.
 - Resets that motor's PID integral/derivative memory.
 
 Success output:
 
 ```text
-OK SETK motor=M0 kp=0.500 ki=0.000 kd=0.050
+OK SETPID motor=M0 kp_milli=500 ki_milli=0 kd_milli=50
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+ERR ESP_ERR_INVALID_ARG
+```
+
+## `getpid M0`
+
+Reads live PID gains for one motor.
+
+Input:
+
+```text
+getpid M0
+```
+
+Effect:
+
+- Calls `get_pid_gains("M0", &kp, &ki, &kd)`.
+- Returns the live per-motor gains in milli-units.
+
+Success output:
+
+```text
+OK PID motor=M0 kp_milli=500 ki_milli=0 kd_milli=50
 ```
 
 Error outputs:
@@ -315,10 +468,8 @@ Effect:
 Success output:
 
 ```text
-CONFIG pid_kp_milli 500
-CONFIG pid_ki_milli 0
-CONFIG pid_kd_milli 50
 CONFIG max_pwm 245
+CONFIG position_tolerance_counts 20
 ```
 
 Error outputs:
@@ -451,24 +602,9 @@ ERR BAD_ARGS
 Editable keys:
 
 ```text
-pid_kp_milli
-pid_ki_milli
-pid_kd_milli
 max_pwm
-max_speed_counts_per_sec
 position_tolerance_counts
 ```
-
-PID gain config keys are stored as milli-units:
-
-```text
-pid_kp_milli 500 = live kp 0.500
-pid_ki_milli 0 = live ki 0.000
-pid_kd_milli 50 = live kd 0.050
-```
-
-Changing or resetting a PID gain config key updates the live PID gains for all
-configured motors.
 
 ## Adding Runtime Config
 

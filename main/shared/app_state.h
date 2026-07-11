@@ -19,6 +19,12 @@
 #define APP_MOTOR_COUNT 1
 #define APP_MOTOR_ID_MAX_LEN 8
 
+typedef enum {
+    /* Keep controller type explicit because PID_control now only means PID owns output. */
+    MOTOR_PID_MODE_POSITION,
+    MOTOR_PID_MODE_SPEED,
+} motor_pid_mode_t;
+
 typedef struct {
     /* Stable user-facing id used by console, hardware APIs, and PID APIs. */
     char id[APP_MOTOR_ID_MAX_LEN];
@@ -27,12 +33,15 @@ typedef struct {
     int pwm;
     int direction;
 
-    /* Encoder-derived position data. PCNT remains the hardware source of truth. */
+    /* Encoder-derived position/speed data share this block because hardware_task publishes both snapshots. */
     int encoder_count;
     int current_position;
     int target_position;
+    int speed;
+    int target_speed;
     int position_offset;
-    bool position_control;
+    bool PID_control;
+    motor_pid_mode_t pid_mode;
 
     /* Per-motor PID gains; global config was removed because motors may tune differently. TODO: persist in NVS and load during boot. */
     float kp;

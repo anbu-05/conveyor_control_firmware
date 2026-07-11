@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-07-11T18:21:52+05:30
+
+Implemented and verified the speed-controller checkpoint on hardware.
+
+Changes included in this checkpoint:
+
+- Added speed state to `motor_t`: `speed`, `target_speed`, and `pid_mode`.
+- Renamed the PID ownership flag from the old position-specific wording to `PID_control`.
+- Updated `hardware_task()` to publish measured speed from encoder position deltas.
+- Made the existing PID task selectable between position error and speed error.
+- Added console/API support for `setspeed`, `getspeed`, `get_pidmode`, and `pid_control`.
+- Renamed the ambiguous state-machine status command from `getstatus` to `get_smstatus`.
+- Refreshed serial command documentation for the current PID and speed-control commands.
+
+Validation:
+
+- Hardware bring-up confirmed the current changes are working so far.
+- `git diff --check` passed.
+- ESP-IDF build was not run in this shell because the ESP-IDF environment is not loaded here.
+
 ## 2026-07-11T06:52:04+05:30
 
 Documented the code-comment convention for control-path edits.
@@ -41,8 +61,8 @@ Changes included in this checkpoint:
 - Replaced the old `store/motor_store.*` placeholder with `tasks/nvs.*` as the future NVS task boundary.
 - Kept `setconfig` and `resetconfig` as RAM-only console commands; flash defaults still come from `runtime_config.c`.
 - Removed `setk` from the console and PID public API; PID gains now come from runtime config.
-- Added `positioncontrol <motor_id> <0|1>` and made raw `setmotor`, `stop`, and `stopmotor` disable position control before commanding hardware.
-- Made `setposition` reject target changes when position control is disabled.
+- Added `pid_control <motor_id> <0|1>` and made raw `setmotor`, `stop`, and `stopmotor` disable PID control before commanding hardware.
+- Made `setposition` reject target changes when PID control is disabled.
 - Added `getsensors <motor_id>` for upstream/downstream sensor diagnostics.
 - Updated motor wiring/configuration for the current conveyor hardware: PWM pins, encoder pins, sensor pins, sensor active level, and upstream/downstream sensor naming.
 - Updated docs for sensor debugging and noted the observed motor direction versus encoder sign mismatch.
@@ -63,7 +83,7 @@ Changes included in this checkpoint:
 - Added public `statemachine_result_t` and `statemachine_status_t` enums so callers can receive terminal job results and poll live state.
 - Implemented receive and transmit tray state machines with explicit upstream/downstream sensor states, timeouts, motor stop handling, and result logging.
 - Made `statemachine_jobrx()` and `statemachine_jobtx()` block until the queued job completes and return that job's terminal result.
-- Added console commands `jobrx`, `jobtx`, and `getstatus`; `jobrx`/`jobtx` now print final result tokens and `getstatus` prints the current state-machine status.
+- Added console commands `jobrx`, `jobtx`, and `get_smstatus`; `jobrx`/`jobtx` now print final result tokens and `get_smstatus` prints the current state-machine status.
 - Kept raw `setmotor <motor_id> <pwm> <dir>` as a low-level diagnostic command and kept state-machine naming free of S0/S1 and positive/negative conveyor terminology.
 
 Validation:

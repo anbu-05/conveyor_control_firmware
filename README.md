@@ -18,7 +18,7 @@ Implemented:
 - Hardware task for encoder and sensor polling.
 - Raw motor output APIs: `set_motor()` and `stop_motor()`.
 - One PID task per configured motor.
-- PID APIs: `set_position()`, `get_position()`, `set_offset()`, and `setk()`.
+- PID APIs: `set_position()`, `get_position()`, `set_speed()`, `get_speed()`, `set_offset()`, `set_pid_gains()`, and `get_pid_gains()`.
 - Conveyor state-machine APIs: `statemachine_jobrx()`, `statemachine_jobtx()`, and `statemachine_get_status()`.
 - MQTT commands: `ack_test`, `tray_receive`, `tray_transmit`, and `get_commands`.
 
@@ -191,14 +191,16 @@ stop
 stopmotor M0
 setposition M0 1200
 getposition M0
+get_pidmode M0
 setoffset M0 0
-setk M0 0.500 0.000 0.050
+setpid M0 500 0 50
+getpid M0
 getconfig
 setconfig max_pwm 200
 resetconfig max_pwm
 jobrx
 jobtx
-getstatus
+get_smstatus
 status
 ```
 
@@ -312,15 +314,15 @@ Typical workflow:
 2. Start the driver server with the serial port shown by your system, usually
    `/dev/ttyACM0` on Linux.
 3. Click `Connect` in the web UI.
-4. Use `Status`, `Get All Config`, `Job State`, `Position`, and `Sensors` for
+4. Use `Status`, `Get All Config`, `SM State`, `Position`, and `Sensors` for
    safe readback.
 5. Use motor controls carefully. `Set Motor`, `Stop Motor`, and `Stop All`
    directly affect hardware output.
 
 The web driver exposes the current ESP console commands over serial, including
-`status`, `getstatus`, `getconfig`, `setconfig`, `resetconfig`, `jobrx`,
+`status`, `get_smstatus`, `getconfig`, `setconfig`, `resetconfig`, `jobrx`,
 `jobtx`, `setmotor`, `stopmotor`, `stop`, `setposition`, `getposition`,
-`positioncontrol`, `setoffset`, and `getsensors`. The raw console input can be
+`get_pidmode`, `pid_control`, `setoffset`, and `getsensors`. The raw console input can be
 used for any firmware command that is not represented by a button.
 
 ### PID Tuning
@@ -336,15 +338,13 @@ values. KP, KI, and KD are entered as milli-unit runtime config values:
 The current firmware defaults in `main/shared/app_state.c` start `M0` with
 `kp = 0.5`, `ki = 0.0`, and `kd = 0.05`.
 
-`Apply Gains` sends these serial commands:
+`Apply Gains` uses the per-motor PID gain command:
 
 ```text
-setconfig pid_kp_milli <kp>
-setconfig pid_ki_milli <ki>
-setconfig pid_kd_milli <kd>
+setpid M0 <kp_milli> <ki_milli> <kd_milli>
 ```
 
-`Run Step + Return` applies the gains, enables position control, reads the
+`Run Step + Return` applies the gains, enables PID control, reads the
 current position, moves by the configured relative `Step` count, polls
 `getposition` until the target is within tolerance, then returns to the start
 position. Use a small step first and keep `Disable PID after each trial` checked
