@@ -1,9 +1,5 @@
 const CONFIG_LIMITS = {
-  pid_kp_milli: [0, 100000],
-  pid_ki_milli: [0, 100000],
-  pid_kd_milli: [0, 100000],
   max_pwm: [0, 255],
-  max_speed_counts_per_sec: [0, 100000],
   position_tolerance_counts: [0, 100000],
 };
 
@@ -51,7 +47,7 @@ const el = {
   serialTrayValue: document.querySelector("#serialTrayValue"),
   serialUpstreamSensor: document.querySelector("#serialUpstreamSensor"),
   serialDownstreamSensor: document.querySelector("#serialDownstreamSensor"),
-  serialPositionControl: document.querySelector("#serialPositionControl"),
+  serialPidControl: document.querySelector("#serialPidControl"),
   serialPidPill: document.querySelector("#serialPidPill"),
   statusCommandCount: document.querySelector("#statusCommandCount"),
   statusAppName: document.querySelector("#statusAppName"),
@@ -66,8 +62,8 @@ const el = {
   serialDirectionInput: document.querySelector("#serialDirectionInput"),
   serialSetMotorButton: document.querySelector("#serialSetMotorButton"),
   serialStopMotorButton: document.querySelector("#serialStopMotorButton"),
-  serialPositionControlOnButton: document.querySelector("#serialPositionControlOnButton"),
-  serialPositionControlOffButton: document.querySelector("#serialPositionControlOffButton"),
+  serialPidControlOnButton: document.querySelector("#serialPidControlOnButton"),
+  serialPidControlOffButton: document.querySelector("#serialPidControlOffButton"),
   serialPositionInput: document.querySelector("#serialPositionInput"),
   serialSetPositionButton: document.querySelector("#serialSetPositionButton"),
   serialOffsetInput: document.querySelector("#serialOffsetInput"),
@@ -124,8 +120,8 @@ function bindEvents() {
 
   el.serialSetMotorButton.addEventListener("click", setSerialMotor);
   el.serialStopMotorButton.addEventListener("click", () => sendSerialCommand("stopmotor", [currentMotorId()]));
-  el.serialPositionControlOnButton.addEventListener("click", () => sendSerialCommand("positioncontrol", [currentMotorId(), "1"]));
-  el.serialPositionControlOffButton.addEventListener("click", () => sendSerialCommand("positioncontrol", [currentMotorId(), "0"]));
+  el.serialPidControlOnButton.addEventListener("click", () => sendSerialCommand("pid_control", [currentMotorId(), "1"]));
+  el.serialPidControlOffButton.addEventListener("click", () => sendSerialCommand("pid_control", [currentMotorId(), "0"]));
   el.serialSetPositionButton.addEventListener("click", setSerialPosition);
   el.serialSetOffsetButton.addEventListener("click", setSerialOffset);
   el.positionPollToggleButton.addEventListener("click", togglePositionPoll);
@@ -147,7 +143,7 @@ function bindEvents() {
   el.serialResetConfigButton.addEventListener("click", () => {
     sendSerialCommand("resetconfig", [el.serialConfigKey.value]);
   });
-  el.pidTuneApplyButton.addEventListener("click", () => applyPidTuneGains());
+  el.pidTuneApplyButton.addEventListener("click", () => applyPidTuneGains(currentMotorId()));
   el.pidTuneRunButton.addEventListener("click", runPidTuneStepReturn);
   el.pidTuneAbortButton.addEventListener("click", abortPidTune);
   el.serialRawButton.addEventListener("click", sendSerialRaw);
@@ -360,17 +356,12 @@ function setSerialConfig() {
   sendSerialCommand("setconfig", [key, String(value)]);
 }
 
-async function applyPidTuneGains() {
+async function applyPidTuneGains(motorId) {
   const gains = readPidTuneGains();
   if (!gains) return null;
 
   try {
-    await postSerialCommand("setconfig", ["pid_kp_milli", String(gains.kp)]);
-    await postSerialCommand("setconfig", ["pid_ki_milli", String(gains.ki)]);
-    await postSerialCommand("setconfig", ["pid_kd_milli", String(gains.kd)]);
-    state.lastSerialConfig.pid_kp_milli = String(gains.kp);
-    state.lastSerialConfig.pid_ki_milli = String(gains.ki);
-    state.lastSerialConfig.pid_kd_milli = String(gains.kd);
+    await postSerialCommand("setpid", [motorId, String(gains.kp), String(gains.ki), String(gains.kd)]);
     setPidTuneResult(`Gains applied ${gains.kp}/${gains.ki}/${gains.kd}`);
     return gains;
   } catch (error) {
@@ -398,8 +389,8 @@ async function runPidTuneStepReturn() {
   updatePidTuneButtons();
 
   try {
-    await applyPidTuneGains();
-    await postSerialCommand("positioncontrol", [motorId, "1"]);
+    await applyPidTuneGains(motorId);
+    await postSerialCommand("pid_control", [motorId, "1"]);
     setPidTuneResult("Reading start position");
     const start = await getFreshPosition(motorId, pollMs, timeoutMs);
     state.pidTune.startPosition = start;
@@ -417,7 +408,7 @@ async function runPidTuneStepReturn() {
     if (!returned.ok) throw new Error(returned.reason);
 
     if (el.pidTuneDisableAfter.checked) {
-      await postSerialCommand("positioncontrol", [motorId, "0"]);
+      await postSerialCommand("pid_control", [motorId, "0"]);
     }
     appendPidTuneHistory({ gains, start, target: state.pidTune.outboundTarget, final: returned.position, result: "ok", elapsedMs: Date.now() - startedAt });
     setPidTuneResult("Complete");
@@ -446,7 +437,7 @@ async function safeStopPidTune(motorId) {
     appendSerialLog("rx", `Safe stopmotor failed: ${error.message}`);
   }
   try {
-    await postSerialCommand("positioncontrol", [motorId, "0"]);
+    await postSerialCommand("pid_control", [motorId, "0"]);
   } catch (error) {
     appendSerialLog("rx", `Disable PID failed: ${error.message}`);
   }
@@ -487,9 +478,9 @@ async function waitForPositionNear(motorId, target, tolerance, timeoutMs, pollMs
 }
 
 function readPidTuneGains() {
-  const kp = parseBoundedInt(el.pidTuneKpMilli.value, ...CONFIG_LIMITS.pid_kp_milli, "KP milli");
-  const ki = parseBoundedInt(el.pidTuneKiMilli.value, ...CONFIG_LIMITS.pid_ki_milli, "KI milli");
-  const kd = parseBoundedInt(el.pidTuneKdMilli.value, ...CONFIG_LIMITS.pid_kd_milli, "KD milli");
+  const kp = parseBoundedInt(el.pidTuneKpMilli.value, 0, 100000, "KP milli");
+  const ki = parseBoundedInt(el.pidTuneKiMilli.value, 0, 100000, "KI milli");
+  const kd = parseBoundedInt(el.pidTuneKdMilli.value, 0, 100000, "KD milli");
   if (kp === null || ki === null || kd === null) return null;
   return { kp, ki, kd };
 }
@@ -581,8 +572,8 @@ function renderSerialSnapshot(snapshot) {
   el.serialUpstreamSensor.textContent = sensorText(sensors.upstream);
   el.serialDownstreamSensor.textContent = sensorText(sensors.downstream);
   renderStatusSummary(state.statusSummary, state.statusMotorIds, state.statusCommands);
-  const pidState = position.position_control;
-  el.serialPositionControl.textContent = boolText(pidState);
+  const pidState = position.pid_control;
+  el.serialPidControl.textContent = boolText(pidState);
   setPill(el.serialPidPill, `PID ${boolText(pidState).toLowerCase()}`, pidState === true ? "good" : pidState === false ? "muted" : "bad");
 
   if (snapshot.config && snapshot.config[el.serialConfigKey.value] !== undefined) {
@@ -600,7 +591,7 @@ function renderSerialSnapshot(snapshot) {
     stopPositionPoll();
   }
 
-  document.querySelectorAll(".serial-command, #serialSetMotorButton, #serialStopMotorButton, #serialPositionControlOnButton, #serialPositionControlOffButton, #serialSetPositionButton, #serialSetOffsetButton, #serialSetConfigButton, #serialGetConfigButton, #serialResetConfigButton, #serialRawButton").forEach((button) => {
+  document.querySelectorAll(".serial-command, #serialSetMotorButton, #serialStopMotorButton, #serialPidControlOnButton, #serialPidControlOffButton, #serialSetPositionButton, #serialSetOffsetButton, #serialSetConfigButton, #serialGetConfigButton, #serialResetConfigButton, #serialRawButton").forEach((button) => {
     button.disabled = !state.serialConnected;
   });
   updatePidTuneButtons();
@@ -626,9 +617,6 @@ function renderPositionPollState() {
 
 function syncPidTuneInputs(config) {
   const fields = [
-    ["pid_kp_milli", el.pidTuneKpMilli],
-    ["pid_ki_milli", el.pidTuneKiMilli],
-    ["pid_kd_milli", el.pidTuneKdMilli],
     ["position_tolerance_counts", el.pidTuneTolerance],
   ];
   fields.forEach(([key, input]) => {

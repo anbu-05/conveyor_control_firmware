@@ -87,7 +87,7 @@
             </div>
             <div class="metric">
               <span class="metric-label">PID</span>
-              <strong id="serialPositionControl">Unknown</strong>
+              <strong id="serialPidControl">Unknown</strong>
             </div>
           </div>
 
@@ -126,7 +126,7 @@
             <h2>Quick Reads</h2>
             <div class="cmd-grid">
               <button class="serial-command btn-cmd" data-serial-command="status">Status</button>
-              <button class="serial-command btn-cmd" data-serial-command="getstatus">Job State</button>
+              <button class="serial-command btn-cmd" data-serial-command="get_smstatus">SM State</button>
               <button class="serial-command btn-cmd needs-motor" data-serial-command="getposition">Position</button>
               <button class="serial-command btn-cmd needs-motor" data-serial-command="getsensors">Sensors</button>
               <button class="serial-command btn-cmd wide" data-serial-command="getconfig">Get All Config</button>
@@ -164,11 +164,11 @@
           </section>
 
           <section class="card">
-            <h2>Position Control</h2>
+            <h2>PID Control</h2>
             <div class="watch-row">
               <span id="serialPidPill" class="pill">PID unknown</span>
-              <button id="serialPositionControlOnButton" class="btn-cmd" type="button">On</button>
-              <button id="serialPositionControlOffButton" class="btn-ghost" type="button">Off</button>
+              <button id="serialPidControlOnButton" class="btn-cmd" type="button">On</button>
+              <button id="serialPidControlOffButton" class="btn-ghost" type="button">Off</button>
             </div>
             <div class="tune-row single-action-row">
               <label class="tune-label" for="serialPositionInput">Target</label>

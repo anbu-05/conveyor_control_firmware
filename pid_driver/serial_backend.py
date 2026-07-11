@@ -11,7 +11,7 @@ from typing import Any
 try:
     import serial
 except ImportError as exc:  # pragma: no cover - exercised only without dependency installed
-    raise ImportError("pyserial is required. Install it with: python3 -m pip install -r driver/requirements.txt") from exc
+    raise ImportError("pyserial is required. Install it with: python3 -m pip install -r pid_driver/requirements.txt") from exc
 
 
 DEFAULT_SERIAL_PORT = "/dev/ttyACM0"
@@ -19,11 +19,6 @@ DEFAULT_SERIAL_BAUD = 115200
 MAX_COMMAND_LENGTH = 160
 DEFAULT_MOTOR_ID = "M0"
 MIN_COMMAND_INTERVAL_SECONDS = 0.18
-
-CONFIG_LIMITS: dict[str, tuple[int, int]] = {
-    "max_pwm": (0, 255),
-    "position_tolerance_counts": (0, 100000),
-}
 
 MOTOR_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 KEY_VALUE_RE = re.compile(r"(?P<key>[A-Za-z0-9_]+)=(?P<value>\S+)")
@@ -38,13 +33,13 @@ class SerialSnapshot:
     last_line: str = ""
     last_error: str = ""
     ready: bool = False
-    job_state: str = "UNKNOWN"
     motor_id: str = DEFAULT_MOTOR_ID
     motor_ids: list[str] = field(default_factory=lambda: [DEFAULT_MOTOR_ID])
     motor: dict[str, Any] = field(default_factory=dict)
     position: dict[str, Any] = field(default_factory=dict)
-    sensors: dict[str, Any] = field(default_factory=dict)
-    config: dict[str, str] = field(default_factory=dict)
+    # Speed and gain state are separated so the PID UI can switch graphs without mixing units.
+    speed: dict[str, Any] = field(default_factory=dict)
+    pid: dict[str, Any] = field(default_factory=dict)
     status: dict[str, str] = field(default_factory=dict)
     commands: list[str] = field(default_factory=list)
     last_result: dict[str, Any] = field(default_factory=dict)
@@ -108,9 +103,9 @@ class SerialBackend:
             self.snapshot.baud = baud
             self.snapshot.last_error = ""
             self.snapshot.last_update_monotonic = time.monotonic()
-        self._reader = threading.Thread(target=self._read_loop, name="conveyor-driver-serial-reader", daemon=True)
+        self._reader = threading.Thread(target=self._read_loop, name="conveyor-pid-driver-serial-reader", daemon=True)
         self._reader.start()
-        self._emit("status", "rx", f"Serial connected to {port} at {baud}")
+        self._emit("status", "rx", f"PID driver connected to {port} at {baud}")
 
     def disconnect(self, emit: bool = True) -> None:
         serial_port = self._serial
@@ -132,7 +127,7 @@ class SerialBackend:
             self.snapshot.connected = False
             self.snapshot.last_update_monotonic = time.monotonic()
         if emit and was_connected:
-            self._emit("status", "rx", "Serial disconnected")
+            self._emit("status", "rx", "PID driver disconnected")
 
     def command(self, name: str, args: list[str] | None = None) -> str:
         line = self._build_command(name, args or [])
@@ -151,10 +146,7 @@ class SerialBackend:
             self._emit("error", "rx", "Serial is not connected; command was not sent")
             raise RuntimeError("serial is not connected")
 
-        # ESP-IDF console is configured with ESP_LINE_ENDINGS_CR on RX and is
-        # served through linenoise. Ctrl-U clears any partial prompt input, then
-        # CR submits the command as a terminal would. Sending LF only can leave
-        # linenoise with mangled commands such as "tatus" or "us".
+        # Keep the copied ESP-IDF terminal handshake because this driver still talks through linenoise.
         payload = f"\x15{line}\r".encode("utf-8")
         with self._write_lock:
             try:
@@ -205,10 +197,7 @@ class SerialBackend:
                     self._handle_line(line)
 
     def _answer_terminal_queries(self, buffer: bytearray) -> bytearray:
-        # ESP-IDF linenoise can ask the attached terminal for cursor position
-        # with DSR (ESC[6n). A normal terminal answers ESC[row;colR. Without an
-        # answer, linenoise may consume subsequent command bytes as the pending
-        # response, which mangles commands such as stopmotor into UNKNOWN_COMMAND.
+        # Answering DSR prevents linenoise from eating the next command bytes during PID polling.
         query = b"\x1b[6n"
         response = b"\x1b[1;1R"
         while query in buffer:
@@ -248,10 +237,6 @@ class SerialBackend:
         with self._lock:
             if token == "OK":
                 return self._parse_ok(parts)
-            if token == "CONFIG" and len(parts) >= 3:
-                value = " ".join(parts[2:])
-                self.snapshot.config[parts[1]] = value
-                return {"type": "config", "key": parts[1], "value": value}
             if token == "STATUS" and len(parts) >= 2:
                 return self._parse_status(parts)
             if token == "COMMAND" and len(parts) >= 2:
@@ -296,50 +281,36 @@ class SerialBackend:
         values = self._key_values(parts[2:])
         data: dict[str, Any] = {"type": "ok", "command": command, "values": values}
 
-        if command == "STATUS" and "state" in values:
-            self.snapshot.job_state = values["state"]
-            data["state"] = values["state"]
+        # Parse only the exact PID-driver responses so malformed or unrelated lines stay visible in the log.
+        if command == "STATUS":
+            data.update({"type": "status_ok", "values": values})
         elif command == "POSITION":
             self._merge_position(values)
             data.update({"type": "position", **values})
+        elif command == "SETPOSITION":
+            self._merge_position(values)
+            data.update({"type": "setposition", **values})
         elif command == "SPEED":
             self._merge_speed(values)
             data.update({"type": "speed", **values})
-        elif command == "SENSORS":
-            self._merge_sensors(values)
-            data.update({"type": "sensors", **values})
+        elif command == "SETSPEED":
+            self._merge_speed(values)
+            data.update({"type": "setspeed", **values})
+        elif command in {"PID", "SETPID"}:
+            self._merge_pid(values)
+            data.update({"type": "pid" if command == "PID" else "setpid", **values})
         elif command == "SETMOTOR":
             self._merge_motor(values)
             data.update({"type": "motor", **values})
         elif command in {"STOP", "STOPMOTOR"}:
             self.snapshot.motor["pwm"] = 0
             data["type"] = "stop"
-        elif command == "SETPOSITION":
-            self._merge_position(values)
-            data.update({"type": "setposition", **values})
-        elif command == "SETSPEED":
-            self._merge_speed(values)
-            data.update({"type": "setspeed", **values})
-        elif command in {"SETPID", "PID"}:
-            self._merge_pid_gains(values)
-            data.update({"type": command.lower(), **values})
-        elif command == "PID_CONTROL":
-            self._merge_pid_control(values)
-            data.update({"type": "pid_control", **values})
         elif command == "PIDMODE":
             self._merge_pid_mode(values)
             data.update({"type": "pidmode", **values})
         elif command == "SETOFFSET":
             self._merge_position(values)
             data.update({"type": "setoffset", **values})
-        elif command in {"JOBRX", "JOBTX"} and "result" in values:
-            self.snapshot.job_state = values["result"]
-            data.update({"type": command.lower(), "result": values["result"]})
-        elif command == "SETCONFIG" and len(parts) >= 4:
-            self.snapshot.config[parts[2]] = parts[3]
-            data.update({"type": "setconfig", "key": parts[2], "value": parts[3]})
-        elif command == "RESETCONFIG" and len(parts) >= 3:
-            data.update({"type": "resetconfig", "key": parts[2]})
 
         self.snapshot.last_error = ""
         self.snapshot.last_result = data
@@ -368,37 +339,20 @@ class SerialBackend:
         if "motor" in values:
             self._set_motor_id(values["motor"])
         if "speed" in values:
-            self.snapshot.position["speed"] = self._to_int(values["speed"])
+            self.snapshot.speed["speed"] = self._to_int(values["speed"])
 
-    def _merge_pid_gains(self, values: dict[str, str]) -> None:
+    def _merge_pid(self, values: dict[str, str]) -> None:
         if "motor" in values:
             self._set_motor_id(values["motor"])
         for key in ("kp_milli", "ki_milli", "kd_milli"):
             if key in values:
-                self.snapshot.position[key] = self._to_int(values[key])
-
-    def _merge_pid_control(self, values: dict[str, str]) -> None:
-        if "motor" in values:
-            self._set_motor_id(values["motor"])
-        if "enabled" in values:
-            self.snapshot.position["pid_control"] = self._to_bool_int(values["enabled"])
+                self.snapshot.pid[key] = self._to_int(values[key])
 
     def _merge_pid_mode(self, values: dict[str, str]) -> None:
         if "motor" in values:
             self._set_motor_id(values["motor"])
         if "mode" in values:
-            self.snapshot.position["pid_mode"] = values["mode"]
-
-    def _merge_sensors(self, values: dict[str, str]) -> None:
-        if "motor" in values:
-            self._set_motor_id(values["motor"])
-        for key in ("upstream", "downstream"):
-            if key in values:
-                self.snapshot.sensors[key] = self._to_int(values[key])
-        upstream = self.snapshot.sensors.get("upstream")
-        downstream = self.snapshot.sensors.get("downstream")
-        if upstream is not None or downstream is not None:
-            self.snapshot.sensors["has_tray"] = upstream == 0 or downstream == 0
+            self.snapshot.pid["mode"] = values["mode"]
 
     def _set_motor_id(self, motor_id: str) -> None:
         self.snapshot.motor_id = motor_id
@@ -416,6 +370,7 @@ class SerialBackend:
 
     def _build_command(self, name: str, args: list[str]) -> str:
         name = name.strip().lower()
+        # This copied driver intentionally accepts only PID commissioning commands requested for the focused UI.
         if name == "setmotor":
             self._expect_args(name, args, 3)
             motor_id = self._parse_motor_id(args[0])
@@ -432,52 +387,35 @@ class SerialBackend:
         if name == "stopmotor":
             self._expect_args(name, args, 1)
             return f"stopmotor {self._parse_motor_id(args[0])}"
-        if name in {"setposition", "setoffset"}:
+        if name in {"setposition", "setoffset", "setspeed"}:
             self._expect_args(name, args, 2)
             return f"{name} {self._parse_motor_id(args[0])} {self._parse_int(args[1], name)}"
-        if name == "setspeed":
+        if name == "set_pidmode":
             self._expect_args(name, args, 2)
-            return f"setspeed {self._parse_motor_id(args[0])} {self._parse_int(args[1], name)}"
-        if name == "setpid":
-            self._expect_args(name, args, 4)
-            kp = self._parse_int(args[1], "kp_milli")
-            ki = self._parse_int(args[2], "ki_milli")
-            kd = self._parse_int(args[3], "kd_milli")
-            if kp < 0 or ki < 0 or kd < 0:
-                raise ValueError("PID gains must be non-negative")
-            return f"setpid {self._parse_motor_id(args[0])} {kp} {ki} {kd}"
-        if name in {"getposition", "getsensors", "getspeed", "getpid"}:
-            self._expect_args(name, args, 1)
-            return f"{name} {self._parse_motor_id(args[0])}"
+            mode = args[1].strip().lower()
+            if mode not in {"position", "speed"}:
+                raise ValueError("PID mode must be position or speed")
+            return f"set_pidmode {self._parse_motor_id(args[0])} {mode}"
         if name == "pid_control":
             self._expect_args(name, args, 2)
-            enabled = self._parse_int(args[1], "enabled")
+            enabled = self._parse_int(args[1], "pid_control enabled")
+            # Match firmware's strict 0/1 contract so the driver rejects invalid ownership states before writing serial.
             if enabled not in {0, 1}:
-                raise ValueError("enabled must be 0 or 1")
+                raise ValueError("pid_control enabled must be 0 or 1")
             return f"pid_control {self._parse_motor_id(args[0])} {enabled}"
-        if name == "getconfig":
-            if len(args) == 0:
-                return "getconfig"
+        if name in {"getposition", "getspeed", "get_pidmode", "getpid"}:
             self._expect_args(name, args, 1)
-            return f"getconfig {self._parse_config_key(args[0])}"
-        if name == "setconfig":
-            self._expect_args(name, args, 2)
-            key = self._parse_config_key(args[0])
-            value = self._parse_int(args[1], key)
-            low, high = CONFIG_LIMITS[key]
-            if value < low or value > high:
-                raise ValueError(f"{key} must be between {low} and {high}")
-            return f"setconfig {key} {value}"
-        if name == "resetconfig":
-            self._expect_args(name, args, 1)
-            return f"resetconfig {self._parse_config_key(args[0])}"
-        if name in {"jobrx", "jobtx", "get_smstatus", "status"}:
+            return f"{name} {self._parse_motor_id(args[0])}"
+        if name == "setpid":
+            self._expect_args(name, args, 4)
+            gains = [self._parse_int(arg, label) for arg, label in zip(args[1:], ("kp_milli", "ki_milli", "kd_milli"), strict=True)]
+            if any(gain < 0 for gain in gains):
+                raise ValueError("PID gains must be non-negative")
+            return f"setpid {self._parse_motor_id(args[0])} {gains[0]} {gains[1]} {gains[2]}"
+        if name == "status":
             self._expect_args(name, args, 0)
-            return name
-        if name == "get_pidmode":
-            self._expect_args(name, args, 1)
-            return f"get_pidmode {self._parse_motor_id(args[0])}"
-        raise ValueError(f"unsupported serial command: {name}")
+            return "status"
+        raise ValueError(f"unsupported PID driver command: {name}")
 
     def _emit(self, kind: str, direction: str, message: str, data: dict[str, Any] | None = None) -> None:
         self.events.put(SerialEvent(kind=kind, direction=direction, message=message, data=data, timestamp=time.time()))
@@ -504,13 +442,6 @@ class SerialBackend:
         return value
 
     @staticmethod
-    def _parse_config_key(value: str) -> str:
-        value = value.strip()
-        if value not in CONFIG_LIMITS:
-            raise ValueError("unknown config key")
-        return value
-
-    @staticmethod
     def _parse_int(value: str, label: str) -> int:
         try:
             return int(value, 10)
@@ -523,10 +454,3 @@ class SerialBackend:
             return int(value, 10)
         except ValueError:
             return None
-
-    @staticmethod
-    def _to_bool_int(value: str) -> bool | None:
-        parsed = SerialBackend._to_int(value)
-        if parsed is None:
-            return None
-        return bool(parsed)

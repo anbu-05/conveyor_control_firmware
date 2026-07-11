@@ -114,12 +114,12 @@ Finalized plan:
 - Use existing runtime-config PID defaults/NVS values only as startup inputs; convert milli-unit config values to live float gains in `motor_pid_init()`.
 - Keep `setk()` live-only. Config/NVS persistence remains owned by `runtime_config` and future console/config code.
 - Expose `set_position()`, `get_position()`, `set_offset()`, and `setk()`.
-- Use `position_control` as the user-owned PID enable flag. PID and helper APIs read it but never change it.
+- Use `PID_control` as the user-owned PID enable flag. PID and helper APIs read it but never change it.
 - Add `RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC` with a default of 20000 counts/sec for linear speed-to-PWM scaling.
 - Treat `target_speed` and PID output as signed encoder counts/sec, not raw PWM.
 - Convert speed to PWM linearly at the motor-output boundary with `pwm = abs(speed_counts_per_sec) * max_pwm / max_speed_counts_per_sec`.
-- When `position_control` is false, pass signed `target_speed` through the speed-to-PWM mapper instead of running PID.
-- When `position_control` is true, PID computes signed speed in counts/sec and only the final helper maps speed to PWM.
+- When `PID_control` is false, pass signed `target_speed` through the speed-to-PWM mapper instead of running PID.
+- When `PID_control` is true, PID computes signed speed in counts/sec and only the final helper maps speed to PWM.
 - Map positive position error to `AUTODOOR_OPEN_DIR_LEVEL` and negative error to `AUTODOOR_CLOSE_DIR_LEVEL`.
 - PID loop uses `set_motor()` only. `stop_motor()` remains for direct user/safety control, not normal PID control.
 - PID currently runs every `AUTODOOR_CONTROL_PERIOD_MS`, which is compile-time configured to 10 ms / 100 Hz in `config.h`.
@@ -128,7 +128,7 @@ Validation:
 
 - `git diff --check` passes.
 - No stale speed-control field references remain.
-- `motor_pid_task.c` reads `position_control` but does not write it.
+- `motor_pid_task.c` reads `PID_control` but does not write it.
 - `motor_pid_task.c` does not call `stop_motor()`.
 - PID math is in signed encoder counts/sec and PWM conversion is isolated to the final motor-output helper.
 - `idf.py build` could not run in the current shell because `idf.py` is not on `PATH`.

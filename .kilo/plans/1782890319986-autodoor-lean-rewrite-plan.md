@@ -463,7 +463,7 @@ void stop_motor(void);
 ```
 
 Target `door_motor_t` shape includes `int direction`, `int pwm`, encoder count,
-current/target position, current/target speed, `bool position_control`,
+current/target position, current/target speed, `bool PID_control`,
 `int open_limit_switch`, and `int close_limit_switch`.
 The struct is exposed from `app_state`; tasks edit it directly while holding
 `motor_mutex` instead of adding one app-state setter per field.
@@ -495,12 +495,12 @@ Validation:
   startup gains from runtime config and `setk()` only updates live float gains.
 - Add `position_offset` so `current_position = encoder_count + position_offset`.
 - Expose `set_position()`, `get_position()`, `set_offset()`, and `setk()`.
-- Treat `position_control` as user-owned. PID and helper functions read it but
+- Treat `PID_control` as user-owned. PID and helper functions read it but
   never change it.
 - Treat speed as encoder counts/sec and PWM as the final hardware duty value.
-- When `position_control` is false, pass signed `target_speed` through the
+- When `PID_control` is false, pass signed `target_speed` through the
   speed-to-PWM mapper instead of running PID.
-- When `position_control` is true, PID output is signed speed in counts/sec;
+- When `PID_control` is true, PID output is signed speed in counts/sec;
   only the final motor-output helper maps speed linearly to PWM.
 - Use runtime `RUNTIME_CONFIG_MAX_SPEED_COUNTS_PER_SEC` as the full-scale speed
   that maps to the configured max PWM; the default is 20000 counts/sec.

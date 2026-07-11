@@ -13,7 +13,7 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
   - `setconfig pid_kp_milli <value>`.
   - `setconfig pid_ki_milli <value>`.
   - `setconfig pid_kd_milli <value>`.
-  - `positioncontrol <motor> 1` / `positioncontrol <motor> 0`.
+  - `pid_control <motor> 1` / `pid_control <motor> 0`.
   - `getposition <motor>`.
   - `setposition <motor> <position>`.
   - `stopmotor <motor>` and `stop` for safety.
@@ -28,13 +28,13 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
   - `pid_kd_milli` default `50`.
 - `setconfig` currently updates RAM runtime config, not flash persistence.
 - `pid.c` reads `pid_kp_milli`, `pid_ki_milli`, and `pid_kd_milli` every PID loop iteration and divides by `1000.0`.
-- `setposition` fails with `ERR POSITION_CONTROL_DISABLED` unless `positioncontrol <motor> 1` has been sent first.
-- The driver already parses `OK POSITION motor=<id> pos=<n>`, `OK POSITIONCONTROL motor=<id> enabled=<0|1>`, and `OK SETCONFIG <key> <value>`.
+- `setposition` fails with `ERR PID_CONTROL_DISABLED` unless `pid_control <motor> 1` has been sent first.
+- The driver already parses `OK POSITION motor=<id> pos=<n>`, `OK PID_CONTROL motor=<id> enabled=<0|1>`, and `OK SETCONFIG <key> <value>`.
 - The current driver does not have request/response correlation; UI sequencing should be time/poll based unless implementation adds a lightweight command queue.
 
 ## Implementation Tasks
 1. Update `driver/static/index.html`.
-   - Add a new prominent card, preferably near `Position Control`, titled `PID Tuning`.
+   - Add a new prominent card, preferably near `PID Control`, titled `PID Tuning`.
    - Include numeric inputs for:
      - `KP milli` with id like `pidTuneKpMilli`, default `500`.
      - `KI milli` with id like `pidTuneKiMilli`, default `0`.
@@ -98,7 +98,7 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
    - Confirm before starting because the sequence moves hardware.
    - Set `state.pidTune.running = true`, `abort = false`.
    - Apply gains using `applyPidTuneGains()`.
-   - Send `positioncontrol <motor> 1`.
+   - Send `pid_control <motor> 1`.
    - Get current position by polling `getposition` until a numeric position is available or fail with a clear message.
    - Set `startPosition` from the current position.
    - Compute `outboundTarget = startPosition + stepCounts`.
@@ -107,12 +107,12 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
    - If outbound succeeds and not aborted, send `setposition <motor> <startPosition>`.
    - Poll until start position is reached within tolerance or timeout/abort.
    - On finish, append a trial history row with gains, start, target, final positions, elapsed-ish result text, and success/failure reason.
-   - On abort or timeout, send `stopmotor <motor>` and `positioncontrol <motor> 0` for safety.
-   - On normal successful completion, leave `positioncontrol` enabled by default unless implementation chooses a checkbox `Disable PID after trial`. If adding that checkbox, default it on for safety.
+    - On abort or timeout, send `stopmotor <motor>` and `pid_control <motor> 0` for safety.
+    - On normal successful completion, leave `pid_control` enabled by default unless implementation chooses a checkbox `Disable PID after trial`. If adding that checkbox, default it on for safety.
 
 7. Implement abort behavior.
    - `Abort Tune` sets `state.pidTune.abort = true`.
-   - Immediately send `stopmotor <motor>` and `positioncontrol <motor> 0`.
+   - Immediately send `stopmotor <motor>` and `pid_control <motor> 0`.
    - Update status to `aborted`.
    - Ensure `finally` path clears `running` and refreshes button disabled state.
 
@@ -130,13 +130,13 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
    - Add a short subsection under `Serial Web Driver` explaining PID tuning:
      - KP/KI/KD are milli-unit runtime configs.
      - `500` means `0.500` in `pid.c`.
-     - The tuning run applies gains, enables position control, moves by a relative count step, and returns to start.
+      - The tuning run applies gains, enables PID control, moves by a relative count step, and returns to start.
      - Use `Abort Tune` or `Stop All` if movement is unsafe.
 
 ## Safety Requirements
 - Require a confirmation before `Run Step + Return` starts.
 - `Abort Tune` must remain enabled during a tuning run.
-- Any timeout, failed command, or abort should send `stopmotor <motor>` and `positioncontrol <motor> 0`.
+- Any timeout, failed command, or abort should send `stopmotor <motor>` and `pid_control <motor> 0`.
 - Keep `Stop All` available in the main connection area.
 - Use conservative defaults: low step count and finite timeout.
 - Do not auto-repeat trials. The operator should explicitly start each trial.
@@ -149,7 +149,7 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
    - `setconfig pid_kp_milli 500`.
    - `setconfig pid_ki_milli 0`.
    - `setconfig pid_kd_milli 50`.
-   - `positioncontrol M0 1`.
+    - `pid_control M0 1`.
    - `getposition M0`.
    - `setposition M0 500`.
    - `stopmotor M0`.
@@ -160,8 +160,8 @@ Add a PID tuning workflow to the existing serial web driver so the operator can 
    - Connect serial.
    - Click `Get All Config` and confirm PID tuning inputs fill from config.
    - Run `Apply Gains` and confirm serial log shows three `setconfig` commands.
-   - Run a very small `Step counts` value and confirm the sequence sends `positioncontrol`, `getposition`, `setposition`, periodic `getposition`, return `setposition`, and final polling.
-   - Test `Abort Tune` during movement and confirm `stopmotor` plus `positioncontrol 0` are sent.
+    - Run a very small `Step counts` value and confirm the sequence sends `pid_control`, `getposition`, `setposition`, periodic `getposition`, return `setposition`, and final polling.
+    - Test `Abort Tune` during movement and confirm `stopmotor` plus `pid_control 0` are sent.
    - Test timeout by using an unreachable target or very short timeout and confirm safe stop behavior.
 
 ## Risks And Notes

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <title>Conveyor PID Driver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260711-pid-driver-1" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="eyebrow">PID Driver</span>
+          <h1>Conveyor PID Driver</h1>
+        </div>
+        <div class="topbar-right">
+          <span id="uiBuild" class="pill muted">UI pid-driver-1</span>
+          <span id="wsStatus" class="pill">WS disconnected</span>
+          <span id="serialStatus" class="pill">Serial disconnected</span>
+        </div>
+      </header>
+
+      <main class="main-grid serial-grid">
+        <div class="col-left">
+          <section class="card">
+            <h2>Serial Connection</h2>
+            <form id="serialConnectForm">
+              <div class="field-row serial-field-row">
+                <label class="field">
+                  <span>Port</span>
+                  <input id="serialPort" autocomplete="off" placeholder="/dev/ttyACM0" />
+                </label>
+                <label class="field field-sm">
+                  <span>Baud</span>
+                  <input id="serialBaud" type="number" min="1" max="3000000" placeholder="115200" />
+                </label>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn-primary">Connect</button>
+                <button id="serialDisconnectButton" type="button" class="btn-ghost">Disconnect</button>
+                <!-- Keep status beside connection because operators usually need to load firmware state immediately after connecting. -->
+                <button class="serial-command btn-cmd" data-serial-command="status" type="button">Status</button>
+                <button class="serial-command btn-danger" data-serial-command="stop" type="button">Stop All</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card state-card" id="serialStateCard">
+            <h2>Driver State</h2>
+            <div class="state-body">
+              <span id="serialModeValue" class="state-big">UNKNOWN</span>
+              <span id="serialReady" class="state-elapsed">not ready</span>
+            </div>
+            <div id="serialErrorValue" class="error-line">No serial errors</div>
+          </section>
+
+          <div class="metrics-row serial-metrics">
+            <div class="metric"><span class="metric-label">Motor</span><strong id="serialMotorId">M0</strong></div>
+            <div class="metric"><span class="metric-label">PWM</span><strong id="serialMotorPwm">-</strong></div>
+            <div class="metric"><span class="metric-label">Direction</span><strong id="serialDirectionValue">-</strong></div>
+            <div class="metric"><span class="metric-label">Position</span><strong id="serialPositionValue">-</strong></div>
+            <div class="metric"><span class="metric-label">Speed</span><strong id="serialSpeedValue">-</strong></div>
+            <div class="metric"><span class="metric-label">KP</span><strong id="serialKpValue">-</strong></div>
+            <div class="metric"><span class="metric-label">KI</span><strong id="serialKiValue">-</strong></div>
+            <div class="metric"><span class="metric-label">KD</span><strong id="serialKdValue">-</strong></div>
+          </div>
+
+          <section class="card status-card">
+            <div class="log-header">
+              <h2>Status Summary</h2>
+              <button class="serial-command btn-cmd btn-sm" data-serial-command="status" type="button">Status</button>
+            </div>
+            <div class="status-grid">
+              <div class="metric"><span class="metric-label">App</span><strong id="statusAppName">-</strong></div>
+              <div class="metric"><span class="metric-label">Machine</span><strong id="statusMachineId">-</strong></div>
+              <div class="metric"><span class="metric-label">Topic</span><strong id="statusTopicName">-</strong></div>
+              <div class="metric"><span class="metric-label">MQTT URI</span><strong id="statusMqttUri">-</strong></div>
+            </div>
+            <div class="status-list-row">
+              <span class="metric-label">Motors</span>
+              <div id="statusMotorList" class="chip-list">-</div>
+            </div>
+            <details class="status-details">
+              <summary>Show commands from firmware</summary>
+              <pre id="statusCommandList" class="status-list"></pre>
+            </details>
+          </section>
+
+          <section class="card log-card">
+            <div class="log-header">
+              <h2>Serial Log</h2>
+              <button id="clearSerialLogButton" type="button" class="btn-ghost btn-sm">Clear</button>
+            </div>
+            <pre id="serialLogOutput" aria-live="polite"></pre>
+          </section>
+        </div>
+
+        <div class="col-right">
+          <section class="card">
+            <h2>Motor</h2>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialMotorInput">Motor</label>
+              <input id="serialMotorInput" autocomplete="off" value="M0" />
+              <button id="refreshPidModeButton" class="btn-cmd" type="button">Refresh Mode</button>
+            </div>
+            <div class="watch-row">
+              <span id="pidModePill" class="pill muted">Mode unknown</span>
+              <!-- Mode changes use the new console command so the driver does not infer mode from target commands. -->
+              <select id="pidModeSelect" aria-label="PID mode">
+                <option value="position">Position</option>
+                <option value="speed">Speed</option>
+              </select>
+              <button id="setPidModeButton" class="btn-cmd" type="button">Set Mode</button>
+            </div>
+            <div class="watch-row">
+              <button class="serial-command btn-cmd" data-serial-command="getpid" data-needs-motor="1" type="button">Get PID</button>
+              <!-- PID ownership needs explicit controls so target commands can be enabled before commissioning moves. -->
+              <button class="serial-command btn-cmd" data-serial-command="pid_control" data-needs-motor="1" data-serial-args="1" type="button">PID On</button>
+              <button class="serial-command btn-ghost" data-serial-command="pid_control" data-needs-motor="1" data-serial-args="0" type="button">PID Off</button>
+              <button class="serial-command btn-danger" data-serial-command="stop" type="button">Stop All</button>
+            </div>
+          </section>
+
+          <section class="card danger-zone">
+            <h2>Raw Motor</h2>
+            <div class="tune-row">
+              <label class="tune-label" for="serialPwmInput">PWM</label>
+              <input id="serialPwmInput" type="number" min="0" max="255" value="64" />
+              <select id="serialDirectionInput" aria-label="Motor direction">
+                <option value="0">Dir 0</option>
+                <option value="1">Dir 1</option>
+              </select>
+            </div>
+            <div class="btn-row compact-row">
+              <button id="serialSetMotorButton" class="btn-danger" type="button">Set Motor</button>
+              <button id="serialStopMotorButton" class="btn-ghost" type="button">Stop Motor</button>
+            </div>
+            <p class="card-note">Direct output is kept here because PID commissioning still needs a manual motor stop path.</p>
+          </section>
+
+          <!-- These panels are mode-gated so position commands cannot be sent while firmware reports speed PID mode, and vice versa. -->
+          <section id="positionPanel" class="card mode-panel">
+            <h2>Position Mode</h2>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialPositionInput">Target</label>
+              <input id="serialPositionInput" type="number" value="0" />
+              <button id="serialSetPositionButton" class="btn-cmd" type="button">Set Position</button>
+            </div>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialOffsetInput">Offset</label>
+              <input id="serialOffsetInput" type="number" value="0" />
+              <button id="serialSetOffsetButton" class="btn-cmd" type="button">Set Offset</button>
+            </div>
+            <div class="watch-row poll-row">
+              <span id="positionPollStatus" class="pill muted">Position poll off</span>
+              <!-- Allow 1 ms polling because fast PID tuning needs the browser-side floor lower than the serial queue cadence. -->
+              <input id="positionPollInterval" type="number" min="1" value="100" aria-label="Position poll interval ms" />
+              <button id="positionPollToggleButton" class="btn-cmd" type="button">Start Poll</button>
+            </div>
+          </section>
+
+          <section id="speedPanel" class="card mode-panel">
+            <h2>Speed Mode</h2>
+            <div class="tune-row single-action-row">
+              <label class="tune-label" for="serialSpeedInput">Target</label>
+              <input id="serialSpeedInput" type="number" value="0" />
+              <button id="serialSetSpeedButton" class="btn-cmd" type="button">Set Speed</button>
+            </div>
+            <div class="watch-row poll-row">
+              <span id="speedPollStatus" class="pill muted">Speed poll off</span>
+              <!-- Match the position poll floor so either controller graph can be sampled at the same requested rate. -->
+              <input id="speedPollInterval" type="number" min="1" value="100" aria-label="Speed poll interval ms" />
+              <button id="speedPollToggleButton" class="btn-cmd" type="button">Start Poll</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>PID Gains</h2>
+            <div class="tune-row triple-row">
+              <label class="tune-label" for="pidKpMilli">KP</label>
+              <input id="pidKpMilli" type="number" min="0" value="500" />
+              <label class="tune-label compact-label" for="pidKiMilli">KI</label>
+              <input id="pidKiMilli" type="number" min="0" value="0" />
+              <label class="tune-label compact-label" for="pidKdMilli">KD</label>
+              <input id="pidKdMilli" type="number" min="0" value="50" />
+            </div>
+            <div class="btn-row compact-row">
+              <button id="setPidButton" class="btn-cmd" type="button">Set PID</button>
+              <button id="getPidButton" class="btn-ghost" type="button">Get PID</button>
+            </div>
+            <p class="card-note">Uses firmware `setpid`/`getpid` directly so this copy does not depend on generic runtime config commands.</p>
+          </section>
+
+          <section class="card graph-card">
+            <div class="log-header">
+              <h2>Position / Speed Graph</h2>
+              <button id="clearGraphButton" type="button" class="btn-ghost btn-sm">Clear Graph</button>
+            </div>
+            <div class="graph-meta">
+              <span id="graphMetricLabel" class="pill muted">No metric</span>
+              <span id="graphSampleCount" class="pill muted">0 samples</span>
+              <span id="graphLatestValue" class="pill muted">Latest -</span>
+            </div>
+            <canvas id="signalGraph" width="900" height="320" aria-label="Polled PID signal graph"></canvas>
+          </section>
+
+          <section class="card danger-zone">
+            <h2>Interactive Console</h2>
+            <details open>
+              <summary>Send a raw single-line console command</summary>
+              <div class="tune-row single-action-row raw-row">
+                <input id="serialRawInput" autocomplete="off" placeholder="status" />
+                <button id="serialRawButton" class="btn-danger" type="button">Send</button>
+              </div>
+            </details>
+          </section>
+        </div>
+      </main>
+    </div>
+    <script src="/static/app.js?v=20260711-pid-driver-1"></script>
+  </body>
+</html>

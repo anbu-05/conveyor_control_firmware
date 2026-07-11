@@ -407,7 +407,7 @@ Use console to verify state-machine behavior remains useful for debug:
 ```text
 jobrx
 jobtx
-getstatus
+get_smstatus
 ```
 
 Expected result:

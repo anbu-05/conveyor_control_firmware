@@ -45,6 +45,7 @@ typedef enum {
     CONSOLE_COMMAND_SETSPEED,
     CONSOLE_COMMAND_GETSPEED,
     CONSOLE_COMMAND_GET_PIDMODE,
+    CONSOLE_COMMAND_SET_PIDMODE,
     CONSOLE_COMMAND_SETPID,
     CONSOLE_COMMAND_GETPID,
     CONSOLE_COMMAND_SETOFFSET,
@@ -79,6 +80,7 @@ static const console_command_entry_t s_commands[] = {
     {"setspeed", "Set PID target speed: setspeed <motor_id> <speed>", CONSOLE_COMMAND_SETSPEED},
     {"getspeed", "Get current speed: getspeed <motor_id>", CONSOLE_COMMAND_GETSPEED},
     {"get_pidmode", "Get active PID mode: get_pidmode <motor_id>", CONSOLE_COMMAND_GET_PIDMODE},
+    {"set_pidmode", "Set active PID mode: set_pidmode <motor_id> <position|speed>", CONSOLE_COMMAND_SET_PIDMODE},
     {"setpid", "Set per-motor PID gains: setpid <motor_id> <kp_milli> <ki_milli> <kd_milli>", CONSOLE_COMMAND_SETPID},
     {"getpid", "Get per-motor PID gains: getpid <motor_id>", CONSOLE_COMMAND_GETPID},
     {"setoffset", "Set position offset: setoffset <motor_id> <offset>", CONSOLE_COMMAND_SETOFFSET},
@@ -455,6 +457,47 @@ static int handle_console_command(int argc, char **argv)
             xSemaphoreTake(motor_mutex, portMAX_DELAY);
         }
         pid_mode = motors[motor_index].pid_mode;
+        if (motor_mutex != NULL) {
+            xSemaphoreGive(motor_mutex);
+        }
+
+        printf("OK PIDMODE motor=%s mode=%s\n", argv[1],
+               pid_mode == MOTOR_PID_MODE_SPEED ? "speed" : "position");
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_SET_PIDMODE: {
+        int motor_index = -1;
+        motor_pid_mode_t pid_mode = MOTOR_PID_MODE_POSITION;
+
+        /* set_pidmode changes only the controller source so the driver can switch UI modes before sending targets. */
+        if (argc != 3) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+        if (strcmp(argv[2], "position") == 0) {
+            pid_mode = MOTOR_PID_MODE_POSITION;
+        } else if (strcmp(argv[2], "speed") == 0) {
+            pid_mode = MOTOR_PID_MODE_SPEED;
+        } else {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        motor_index = find_motor_index(argv[1]);
+        if (motor_index < 0) {
+            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+            return 0;
+        }
+
+        if (motor_mutex != NULL) {
+            xSemaphoreTake(motor_mutex, portMAX_DELAY);
+        }
+        /* Reset PID memory because integral/derivative history from the old mode has different units. */
+        motors[motor_index].pid_mode = pid_mode;
+        motors[motor_index].integral = 0.0f;
+        motors[motor_index].previous_error = 0.0f;
+        motors[motor_index].has_previous_error = false;
         if (motor_mutex != NULL) {
             xSemaphoreGive(motor_mutex);
         }
