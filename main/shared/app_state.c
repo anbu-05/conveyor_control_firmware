@@ -1,8 +1,8 @@
 /*
  * Shared application state implementation.
  * This file intentionally keeps the motor, encoder, and sensor snapshot
- * together because they describe one mechanical motor. Tasks edit the exposed
- * motor structs directly while holding motor_mutex.
+ * together because they describe one mechanical motor. app_state is storage;
+ * owner modules expose behavior APIs for the fields they own.
  */
 
 #include "shared/app_state.h"

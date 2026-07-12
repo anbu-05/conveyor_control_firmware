@@ -15,6 +15,18 @@ esp_err_t motor_pid_init(const char *motor_id, motor_pid_mode_t mode);
 /* Runs the periodic position PID loop after main.c creates this task. */
 void motor_pid_task(void *arg);
 
+/* Enables or disables PID ownership of one motor's output and resets PID memory. */
+esp_err_t pid_set_control(const char *motor_id, bool enabled);
+
+/* Returns whether PID currently owns one motor's output. */
+esp_err_t pid_get_control(const char *motor_id, bool *out_enabled);
+
+/* Selects one motor's PID error source and resets PID memory. */
+esp_err_t pid_set_mode(const char *motor_id, motor_pid_mode_t mode);
+
+/* Returns one motor's selected PID error source. */
+esp_err_t pid_get_mode(const char *motor_id, motor_pid_mode_t *out_mode);
+
 /* Sets one motor's requested offset-corrected target position and selects position PID mode. */
 esp_err_t set_position(const char *motor_id, int target_position);
 

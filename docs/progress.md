@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-07-12T18:51:45+05:30
+
+Cleaned up shared app-state ownership and restored repeatable ESP-IDF builds from non-interactive shells.
+
+Changes included in this checkpoint:
+
+- Kept `app_state` as the shared storage warehouse while documenting that public `motors[]` access is a C compromise that C++ could enforce with private storage, const views, friend owners, and RAII locking.
+- Added hardware owner APIs for cross-module reads: `hardware_get_motor_id()` and `hardware_get_sensors()`.
+- Added PID owner APIs for cross-module PID state changes: `pid_set_control()`, `pid_get_control()`, `pid_set_mode()`, and `pid_get_mode()`.
+- Refactored `console.c`, `statemachine.c`, `mqtt.c`, and `main.c` to use the owner APIs instead of directly touching `motors[]` or `motor_mutex`.
+- Centralized PID memory resets with `reset_pid_memory()` so ownership, mode, target, and tuning changes clear the same runtime fields consistently.
+- Added a persistent user-local `idf.py` wrapper at `/home/anbu/bin/idf.py` that sources ESP-IDF `v6.0.1` and adds the ESP32-S3 Xtensa toolchain path before delegating to the real ESP-IDF script.
+
+Validation:
+
+- `git diff --check` passed.
+- Static searches confirmed user-facing/orchestration modules no longer directly access `motors[]`, `motor_mutex`, or semaphore locking.
+- `idf.py fullclean build` completed successfully after the wrapper fix.
+- Build output generated `build/cnc_controller.bin`; binary size was `0xe8910`, leaving `0x176f0` bytes free in the smallest app partition.
+
 ## 2026-07-11T18:21:52+05:30
 
 Implemented and verified the speed-controller checkpoint on hardware.

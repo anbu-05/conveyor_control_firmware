@@ -1,10 +1,17 @@
 #pragma once
 
 /*
- * Shared application state.
- * motors is intentionally exposed so tasks can update the fields they own
- * without adding one app_state helper per value. Take motor_mutex before direct
- * multi-field reads or writes so snapshots stay consistent across tasks.
+ * Shared application state storage.
+ *
+ * This header intentionally exposes motors[] as a C compromise: app_state is
+ * the storage warehouse, while each owning task/module exposes behavior-focused
+ * APIs for the fields it owns. Prefer hardware.h for hardware-owned fields and
+ * pid.h for PID-owned fields instead of reaching across ownership boundaries.
+ *
+ * C++ could enforce this boundary with private storage, const views, friend
+ * owners, and RAII locking. In C, the boundary is documented and kept clean by
+ * convention. Take motor_mutex before direct multi-field reads or writes so
+ * snapshots stay consistent across tasks.
  */
 
 #include <stdbool.h>

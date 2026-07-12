@@ -50,9 +50,15 @@ void app_main(void)
     log_if_error("nvs_init", nvs_init());
     log_if_error("app_state_init", app_state_init());
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-        log_if_error("hardware_init", hardware_init(motors[i].id));
+        const char *motor_id = NULL;
+
+        log_if_error("hardware_get_motor_id", hardware_get_motor_id(i, &motor_id));
+        if (motor_id == NULL) {
+            continue;
+        }
+        log_if_error("hardware_init", hardware_init(motor_id));
         /* Start in position mode so existing boot behavior stays unchanged until speed mode is selected intentionally. */
-        log_if_error("motor_pid_init", motor_pid_init(motors[i].id, MOTOR_PID_MODE_POSITION));
+        log_if_error("motor_pid_init", motor_pid_init(motor_id, MOTOR_PID_MODE_POSITION));
     }
     log_if_error("safety_init", safety_init());
     log_if_error("statemachine_init", statemachine_init());
@@ -61,8 +67,13 @@ void app_main(void)
 
     xTaskCreate(hardware_task, "hardware_task", HARDWARE_TASK_STACK_SIZE, NULL, HARDWARE_TASK_PRIORITY, NULL);
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        const char *motor_id = NULL;
+
+        if (hardware_get_motor_id(i, &motor_id) != ESP_OK) {
+            continue;
+        }
         xTaskCreate(motor_pid_task, "motor_pid_task", MOTOR_PID_TASK_STACK_SIZE,
-                    (void *)motors[i].id, MOTOR_PID_TASK_PRIORITY, NULL);
+                    (void *)motor_id, MOTOR_PID_TASK_PRIORITY, NULL);
     }
     xTaskCreate(safety_task, "safety_task", SAFETY_TASK_STACK_SIZE, NULL, SAFETY_TASK_PRIORITY, NULL);
     xTaskCreate(statemachine_task, "statemachine_task", STATEMACHINE_TASK_STACK_SIZE, NULL, STATEMACHINE_TASK_PRIORITY, NULL);

@@ -19,11 +19,10 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
-#include "shared/app_state.h"
 #include "statemachine/statemachine.h"
+#include "tasks/hardware.h"
 
 #define MQTT_COMMAND_ID_MAX_LEN 96
 #define MQTT_COMMAND_QUEUE_LENGTH 8
@@ -195,16 +194,12 @@ static void publish_commands_result(const char *command_id)
 /* Tray presence is derived from the protected sensor snapshot, not from internal state-machine status. */
 static bool get_has_tray(void)
 {
+    const char *motor_id = NULL;
     int upstream_sensor = !APP_MOTOR_SENSOR_ACTIVE_LEVEL;
     int downstream_sensor = !APP_MOTOR_SENSOR_ACTIVE_LEVEL;
 
-    if (motor_mutex != NULL) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    }
-    upstream_sensor = motors[0].upstream_sensor;
-    downstream_sensor = motors[0].downstream_sensor;
-    if (motor_mutex != NULL) {
-        xSemaphoreGive(motor_mutex);
+    if (hardware_get_motor_id(0, &motor_id) == ESP_OK) {
+        (void)hardware_get_sensors(motor_id, &upstream_sensor, &downstream_sensor);
     }
 
     return upstream_sensor == APP_MOTOR_SENSOR_ACTIVE_LEVEL ||

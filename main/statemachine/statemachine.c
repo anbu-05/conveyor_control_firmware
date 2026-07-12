@@ -13,8 +13,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "shared/app_state.h"
 #include "tasks/hardware.h"
+#include "tasks/pid.h"
 
 #define STATEMACHINE_QUEUE_LEN 1
 #define STATEMACHINE_POLL_MS 20
@@ -56,21 +56,22 @@ static QueueHandle_t s_job_queue;
 static volatile bool s_job_active;
 static volatile statemachine_status_t s_status = STATEMACHINE_STATUS_IDLE;
 
+/* Resolves this single-conveyor state machine's configured motor id. */
+static esp_err_t get_conveyor_motor_id(const char **out_motor_id)
+{
+    return hardware_get_motor_id(0, out_motor_id);
+}
+
 /* Reads downstream/upstream tray sensors as one protected snapshot. */
 static tray_sensor_snapshot_t read_tray_sensors(void)
 {
     tray_sensor_snapshot_t snapshot = {0};
+    const char *motor_id = NULL;
     int downstream_sensor = !APP_MOTOR_SENSOR_ACTIVE_LEVEL;
     int upstream_sensor = !APP_MOTOR_SENSOR_ACTIVE_LEVEL;
 
-    /* Copy both sensor values while hardware_task() is not updating them. */
-    if (motor_mutex != NULL) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    }
-    downstream_sensor = motors[0].downstream_sensor;
-    upstream_sensor = motors[0].upstream_sensor;
-    if (motor_mutex != NULL) {
-        xSemaphoreGive(motor_mutex);
+    if (get_conveyor_motor_id(&motor_id) == ESP_OK) {
+        (void)hardware_get_sensors(motor_id, &upstream_sensor, &downstream_sensor);
     }
 
     /* Convert raw GPIO levels into conveyor-specific detected flags. */
@@ -83,11 +84,12 @@ static tray_sensor_snapshot_t read_tray_sensors(void)
 static void finish_job(statemachine_job_t job, statemachine_result_t result, bool motor_started)
 {
     const bool done = result == STATEMACHINE_RESULT_RX_DONE || result == STATEMACHINE_RESULT_TX_DONE;
+    const char *motor_id = NULL;
     const char *result_text = "UNKNOWN";
 
     /* Ask hardware.c to cut conveyor PWM before acknowledging terminal states. */
-    if (motor_started) {
-        stop_motor(motors[0].id);
+    if (motor_started && get_conveyor_motor_id(&motor_id) == ESP_OK) {
+        stop_motor(motor_id);
     }
 
     /* Convert the public result enum into a stable acknowledgement token. */
@@ -135,22 +137,19 @@ static void finish_job(statemachine_job_t job, statemachine_result_t result, boo
 /* Disables PID ownership and starts raw conveyor movement toward upstream. */
 static bool start_moving_upstream(void)
 {
-    /* Prevent pid.c from overwriting this raw state-machine movement. */
-    if (motor_mutex != NULL) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    const char *motor_id = NULL;
+
+    if (get_conveyor_motor_id(&motor_id) != ESP_OK) {
+        return false;
     }
-    motors[0].PID_control = false;
-    motors[0].target_position = motors[0].current_position;
-    motors[0].target_speed = 0;
-    motors[0].integral = 0.0f;
-    motors[0].previous_error = 0.0f;
-    motors[0].has_previous_error = false;
-    if (motor_mutex != NULL) {
-        xSemaphoreGive(motor_mutex);
+
+    /* Prevent pid.c from overwriting this raw state-machine movement. */
+    if (pid_set_control(motor_id, false) != ESP_OK) {
+        return false;
     }
 
     /* Ask hardware.c to drive the conveyor toward upstream. */
-    return set_motor(motors[0].id, STATEMACHINE_MOVE_PWM, APP_MOTOR_UPSTREAM_DIRECTION_LEVEL) == ESP_OK;
+    return set_motor(motor_id, STATEMACHINE_MOVE_PWM, APP_MOTOR_UPSTREAM_DIRECTION_LEVEL) == ESP_OK;
 }
 
 /* Runs one receive job from empty conveyor through upstream arrival. */

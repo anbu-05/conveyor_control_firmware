@@ -255,6 +255,50 @@ void hardware_task(void *arg)
     }
 }
 
+/* Returns a stable configured motor id pointer for static app lifetime. */
+esp_err_t hardware_get_motor_id(int index, const char **out_motor_id)
+{
+    if (out_motor_id == NULL || index < 0 || index >= APP_MOTOR_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *out_motor_id = motors[index].id;
+    return ESP_OK;
+}
+
+/* Reads both physical sensor levels as one protected snapshot. */
+esp_err_t hardware_get_sensors(const char *motor_id, int *out_upstream_sensor, int *out_downstream_sensor)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || out_upstream_sensor == NULL || out_downstream_sensor == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    *out_upstream_sensor = motor->upstream_sensor;
+    *out_downstream_sensor = motor->downstream_sensor;
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
 /* Sets one BTS7960 direction and PWM; only one side receives duty at a time. */
 esp_err_t set_motor(const char *motor_id, int pwm, int direction)
 {

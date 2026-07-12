@@ -24,6 +24,12 @@ esp_err_t hardware_init(const char *motor_id);
 /* Polls hardware state forever after main.c creates this task. */
 void hardware_task(void *arg);
 
+/* Returns the configured motor id for an index in the shared motor table. */
+esp_err_t hardware_get_motor_id(int index, const char **out_motor_id);
+
+/* Returns one protected snapshot of a motor's physical sensor GPIO levels. */
+esp_err_t hardware_get_sensors(const char *motor_id, int *out_upstream_sensor, int *out_downstream_sensor);
+
 /* Applies raw motor output requested by PID or guarded diagnostics. */
 esp_err_t set_motor(const char *motor_id, int pwm, int direction);
 

@@ -20,11 +20,9 @@
 #include "esp_console.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "linenoise/linenoise.h"
 #include "sdkconfig.h"
-#include "shared/app_state.h"
 #include "statemachine/statemachine.h"
 #include "tasks/hardware.h"
 #include "tasks/pid.h"
@@ -116,43 +114,6 @@ static bool parse_int_arg(const char *text, int *out_value)
     return true;
 }
 
-/* Resolves a console motor id to the shared motor array index. */
-static int find_motor_index(const char *motor_id)
-{
-    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-        if (motor_id != NULL && strcmp(motors[i].id, motor_id) == 0) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-/* Enables/disables PID ownership through the pid_control console command. */
-static esp_err_t set_console_pid_control(const char *motor_id, bool enabled)
-{
-    int motor_index = find_motor_index(motor_id);
-
-    if (motor_index < 0) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (motor_mutex != NULL) {
-        xSemaphoreTake(motor_mutex, portMAX_DELAY);
-    }
-    motors[motor_index].PID_control = enabled;
-    motors[motor_index].target_position = motors[motor_index].current_position;
-    motors[motor_index].target_speed = 0;
-    motors[motor_index].integral = 0.0f;
-    motors[motor_index].previous_error = 0.0f;
-    motors[motor_index].has_previous_error = false;
-    if (motor_mutex != NULL) {
-        xSemaphoreGive(motor_mutex);
-    }
-
-    return ESP_OK;
-}
-
 /* Converts state-machine job results to console-stable tokens. */
 static const char *statemachine_result_text(statemachine_result_t result)
 {
@@ -241,7 +202,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the parsed raw motor output to hardware.c. */
-        err = set_console_pid_control(argv[1], false);
+        err = pid_set_control(argv[1], false);
         if (err == ESP_OK) {
             err = set_motor(argv[1], pwm, direction);
         }
@@ -306,9 +267,14 @@ static int handle_console_command(int argc, char **argv)
         }
 
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
-            (void)set_console_pid_control(motors[i].id, false);
+            const char *motor_id = NULL;
+
+            if (hardware_get_motor_id(i, &motor_id) != ESP_OK) {
+                continue;
+            }
+            (void)pid_set_control(motor_id, false);
             /* Hand each configured motor id to hardware.c so all PWM outputs are cut. */
-            stop_motor(motors[i].id);
+            stop_motor(motor_id);
         }
         printf("OK STOP motors=%d\n", APP_MOTOR_COUNT);
         return 0;
@@ -321,7 +287,7 @@ static int handle_console_command(int argc, char **argv)
         }
 
         /* Hand the stop request to hardware.c so PWM is cut immediately. */
-        err = set_console_pid_control(argv[1], false);
+        err = pid_set_control(argv[1], false);
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -331,7 +297,6 @@ static int handle_console_command(int argc, char **argv)
         return 0;
 
     case CONSOLE_COMMAND_SETPOSITION: {
-        int motor_index = -1;
         int target_position = 0;
         bool PID_control = false;
 
@@ -341,18 +306,10 @@ static int handle_console_command(int argc, char **argv)
             printf("ERR BAD_ARGS\n");
             return 0;
         }
-        motor_index = find_motor_index(argv[1]);
-        if (motor_index < 0) {
-            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        err = pid_get_control(argv[1], &PID_control);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
             return 0;
-        }
-
-        if (motor_mutex != NULL) {
-            xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        }
-        PID_control = motors[motor_index].PID_control;
-        if (motor_mutex != NULL) {
-            xSemaphoreGive(motor_mutex);
         }
         if (!PID_control) {
             printf("ERR PID_CONTROL_DISABLED\n");
@@ -439,26 +396,17 @@ static int handle_console_command(int argc, char **argv)
     }
 
     case CONSOLE_COMMAND_GET_PIDMODE: {
-        int motor_index = -1;
         motor_pid_mode_t pid_mode = MOTOR_PID_MODE_POSITION;
 
-        /* get_pidmode reads the controller selection directly so no extra public PID helper is needed. */
+        /* get_pidmode reads the controller selection through the PID owner API. */
         if (argc != 2) {
             printf("ERR BAD_ARGS\n");
             return 0;
         }
-        motor_index = find_motor_index(argv[1]);
-        if (motor_index < 0) {
-            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        err = pid_get_mode(argv[1], &pid_mode);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
             return 0;
-        }
-
-        if (motor_mutex != NULL) {
-            xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        }
-        pid_mode = motors[motor_index].pid_mode;
-        if (motor_mutex != NULL) {
-            xSemaphoreGive(motor_mutex);
         }
 
         printf("OK PIDMODE motor=%s mode=%s\n", argv[1],
@@ -467,7 +415,6 @@ static int handle_console_command(int argc, char **argv)
     }
 
     case CONSOLE_COMMAND_SET_PIDMODE: {
-        int motor_index = -1;
         motor_pid_mode_t pid_mode = MOTOR_PID_MODE_POSITION;
 
         /* set_pidmode changes only the controller source so the driver can switch UI modes before sending targets. */
@@ -484,22 +431,11 @@ static int handle_console_command(int argc, char **argv)
             return 0;
         }
 
-        motor_index = find_motor_index(argv[1]);
-        if (motor_index < 0) {
-            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        /* Reset PID memory in pid.c because the old mode may have different units. */
+        err = pid_set_mode(argv[1], pid_mode);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
             return 0;
-        }
-
-        if (motor_mutex != NULL) {
-            xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        }
-        /* Reset PID memory because integral/derivative history from the old mode has different units. */
-        motors[motor_index].pid_mode = pid_mode;
-        motors[motor_index].integral = 0.0f;
-        motors[motor_index].previous_error = 0.0f;
-        motors[motor_index].has_previous_error = false;
-        if (motor_mutex != NULL) {
-            xSemaphoreGive(motor_mutex);
         }
 
         printf("OK PIDMODE motor=%s mode=%s\n", argv[1],
@@ -515,7 +451,7 @@ static int handle_console_command(int argc, char **argv)
             return 0;
         }
 
-        err = set_console_pid_control(argv[1], enabled != 0);
+        err = pid_set_control(argv[1], enabled != 0);
         if (err != ESP_OK) {
             printf("ERR %s\n", esp_err_to_name(err));
             return 0;
@@ -572,7 +508,6 @@ static int handle_console_command(int argc, char **argv)
     }
 
     case CONSOLE_COMMAND_GETSENSORS: {
-        int motor_index = -1;
         int upstream_sensor = 0;
         int downstream_sensor = 0;
 
@@ -580,19 +515,10 @@ static int handle_console_command(int argc, char **argv)
             printf("ERR BAD_ARGS\n");
             return 0;
         }
-        motor_index = find_motor_index(argv[1]);
-        if (motor_index < 0) {
-            printf("ERR %s\n", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        err = hardware_get_sensors(argv[1], &upstream_sensor, &downstream_sensor);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
             return 0;
-        }
-
-        if (motor_mutex != NULL) {
-            xSemaphoreTake(motor_mutex, portMAX_DELAY);
-        }
-        upstream_sensor = motors[motor_index].upstream_sensor;
-        downstream_sensor = motors[motor_index].downstream_sensor;
-        if (motor_mutex != NULL) {
-            xSemaphoreGive(motor_mutex);
         }
 
         printf("OK SENSORS motor=%s upstream=%d downstream=%d\n", argv[1], upstream_sensor, downstream_sensor);
@@ -748,13 +674,17 @@ static int handle_console_command(int argc, char **argv)
             printf("COMMAND %s - %s\n", s_commands[i].name, s_commands[i].help);
         }
         for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+            const char *motor_id = NULL;
             int kp_milli = 0;
             int ki_milli = 0;
             int kd_milli = 0;
 
+            if (hardware_get_motor_id(i, &motor_id) != ESP_OK) {
+                continue;
+            }
             /* Status reports per-motor tuning without reaching around the PID API boundary. */
-            (void)get_pid_gains(motors[i].id, &kp_milli, &ki_milli, &kd_milli);
-            printf("MOTOR %s kp_milli=%d ki_milli=%d kd_milli=%d\n", motors[i].id, kp_milli, ki_milli, kd_milli);
+            (void)get_pid_gains(motor_id, &kp_milli, &ki_milli, &kd_milli);
+            printf("MOTOR %s kp_milli=%d ki_milli=%d kd_milli=%d\n", motor_id, kp_milli, ki_milli, kd_milli);
         }
         return 0;
     }

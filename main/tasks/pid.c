@@ -42,6 +42,14 @@ static int int_abs(int value)
     return value < 0 ? -value : value;
 }
 
+/* Clears PID history whenever ownership, tuning, or error units change. */
+static void reset_pid_memory(motor_t *motor)
+{
+    motor->integral = 0.0f;
+    motor->previous_error = 0.0f;
+    motor->has_previous_error = false;
+}
+
 /* Reads one motor's PID-relevant fields as a consistent snapshot. */
 static esp_err_t read_pid_snapshot(const char *motor_id, pid_snapshot_t *out_snapshot)
 {
@@ -170,9 +178,139 @@ esp_err_t motor_pid_init(const char *motor_id, motor_pid_mode_t mode)
     }
 
     motor->pid_mode = mode;
-    motor->integral = 0.0f;
-    motor->previous_error = 0.0f;
-    motor->has_previous_error = false;
+    reset_pid_memory(motor);
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Enables/disables PID output ownership and resets targets/history to the current state. */
+esp_err_t pid_set_control(const char *motor_id, bool enabled)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    motor->PID_control = enabled;
+    motor->target_position = motor->current_position;
+    motor->target_speed = 0;
+    reset_pid_memory(motor);
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Reads whether PID owns one motor's output. */
+esp_err_t pid_get_control(const char *motor_id, bool *out_enabled)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || out_enabled == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    *out_enabled = motor->PID_control;
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Selects PID mode and clears history because position and speed use different units. */
+esp_err_t pid_set_mode(const char *motor_id, motor_pid_mode_t mode)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || (mode != MOTOR_PID_MODE_POSITION && mode != MOTOR_PID_MODE_SPEED)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    motor->pid_mode = mode;
+    reset_pid_memory(motor);
+
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    return ESP_OK;
+}
+
+/* Reads one motor's active PID mode. */
+esp_err_t pid_get_mode(const char *motor_id, motor_pid_mode_t *out_mode)
+{
+    motor_t *motor = NULL;
+
+    if (motor_id == NULL || out_mode == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (strcmp(motors[i].id, motor_id) == 0) {
+            motor = &motors[i];
+            break;
+        }
+    }
+    if (motor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+
+    *out_mode = motor->pid_mode;
 
     if (motor_mutex != NULL) {
         xSemaphoreGive(motor_mutex);
@@ -208,9 +346,7 @@ esp_err_t set_pid_gains(const char *motor_id, int kp_milli, int ki_milli, int kd
     motor->kp = (float)kp_milli / PID_GAIN_SCALE;
     motor->ki = (float)ki_milli / PID_GAIN_SCALE;
     motor->kd = (float)kd_milli / PID_GAIN_SCALE;
-    motor->integral = 0.0f;
-    motor->previous_error = 0.0f;
-    motor->has_previous_error = false;
+    reset_pid_memory(motor);
 
     if (motor_mutex != NULL) {
         xSemaphoreGive(motor_mutex);
@@ -287,9 +423,7 @@ esp_err_t set_position(const char *motor_id, int target_position)
     /* Select position mode with the target so setposition reclaims the shared PID loop after speed tests. */
     motor->target_position = target_position;
     motor->pid_mode = MOTOR_PID_MODE_POSITION;
-    motor->integral = 0.0f;
-    motor->previous_error = 0.0f;
-    motor->has_previous_error = false;
+    reset_pid_memory(motor);
 
     if (motor_mutex != NULL) {
         xSemaphoreGive(motor_mutex);
@@ -332,9 +466,7 @@ esp_err_t set_speed(const char *motor_id, int target_speed)
     /* Select speed mode with the target so setspeed immediately tests the speed error path. */
     motor->target_speed = target_speed;
     motor->pid_mode = MOTOR_PID_MODE_SPEED;
-    motor->integral = 0.0f;
-    motor->previous_error = 0.0f;
-    motor->has_previous_error = false;
+    reset_pid_memory(motor);
 
     if (motor_mutex != NULL) {
         xSemaphoreGive(motor_mutex);
