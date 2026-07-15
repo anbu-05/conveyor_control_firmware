@@ -33,5 +33,11 @@ esp_err_t hardware_get_sensors(const char *motor_id, int *out_upstream_sensor, i
 /* Applies raw motor output requested by PID or guarded diagnostics. */
 esp_err_t set_motor(const char *motor_id, int pwm, int direction);
 
+/* Flips the runtime output map so existing direction constants drive the opposite hardware side. */
+esp_err_t hardware_flip_direction(bool *out_flipped);
+
+/* Reads the runtime output map so tray jobs can keep sensor order aligned with travel direction. */
+esp_err_t hardware_get_direction_flipped(bool *out_flipped);
+
 /* Cuts PWM immediately and records the stopped output in app_state. */
 void stop_motor(const char *motor_id);

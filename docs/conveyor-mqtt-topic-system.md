@@ -36,6 +36,7 @@ ack_test
 tray_transmit
 tray_receive
 get_commands
+flip_direction
 ```
 
 Command summary:
@@ -44,6 +45,7 @@ Command summary:
 - `tray_transmit`: starts a conveyor transmit job. The conveyor expects a tray to already be present and moves it toward the next station.
 - `tray_receive`: arms the conveyor to receive an incoming tray. The motor starts when the entry sensor detects the tray.
 - `get_commands`: asks the ESP to publish the full list of supported commands and their parameters on the result topic.
+- `flip_direction`: toggles the runtime conveyor direction map so the same firmware direction constants drive the opposite hardware side; while flipped, `tray_receive` waits at the upstream sensor and stops at the downstream sensor.
 
 `tray_transmit` and `tray_receive` are used instead of plain `transmit` and `receive` so the command names do not conflict with `command_status: "received"`.
 
@@ -96,6 +98,7 @@ ack_test      -> received -> success
 tray_transmit -> received -> success/failure
 tray_receive  -> received -> success/failure
 get_commands  -> received -> success/failure
+flip_direction -> received -> success/failure
 ```
 
 Example rejected-job response:
@@ -133,6 +136,11 @@ Example `get_commands` response:
     },
     {
       "command": "get_commands",
+      "required_params": [],
+      "optional_params": []
+    },
+    {
+      "command": "flip_direction",
       "required_params": [],
       "optional_params": []
     }

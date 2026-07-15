@@ -25,6 +25,8 @@
 #define HARDWARE_PWM_MAX_DUTY 255
 #define HARDWARE_PWM_RESOLUTION LEDC_TIMER_8_BIT
 
+static bool s_direction_flipped;
+
 /* Sets up BTS7960 enable GPIOs and paired LEDC PWM channels for one motor driver. */
 esp_err_t hardware_motor_init(const char *motor_id)
 {
@@ -305,6 +307,7 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
     motor_t *motor = NULL;
     int32_t configured_max = HARDWARE_PWM_MAX_DUTY;
     int duty = pwm;
+    int output_direction = direction;
 
     /* Resolve the requested motor id before validating command values. */
     for (int i = 0; i < APP_MOTOR_COUNT; i++) {
@@ -337,6 +340,18 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+    /* Read the runtime flip under the shared mutex so command-time reversals affect every caller consistently. */
+    if (s_direction_flipped) {
+        output_direction = direction == APP_MOTOR_POSITIVE_DIR_LEVEL ?
+                           APP_MOTOR_NEGATIVE_DIR_LEVEL : APP_MOTOR_POSITIVE_DIR_LEVEL;
+    }
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
     /* Clear both sides before applying direction to avoid hard reversals. */
     ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, 0),
                         "hardware", "clear rpwm before direction");
@@ -346,7 +361,7 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
                         "hardware", "apply rpwm clear");
     ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->lpwm_ledc_channel),
                         "hardware", "apply lpwm clear");
-    if (direction == APP_MOTOR_POSITIVE_DIR_LEVEL) {
+    if (output_direction == APP_MOTOR_POSITIVE_DIR_LEVEL) {
         ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel, duty),
                             "hardware", "set rpwm duty");
         ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, motor->rpwm_ledc_channel),
@@ -369,6 +384,65 @@ esp_err_t set_motor(const char *motor_id, int pwm, int direction)
     if (motor_mutex != NULL) {
         xSemaphoreGive(motor_mutex);
     }
+    return ESP_OK;
+}
+
+/* Toggles the runtime electrical direction map and reapplies active outputs immediately. */
+esp_err_t hardware_flip_direction(bool *out_flipped)
+{
+    int pwm_snapshot[APP_MOTOR_COUNT] = {0};
+    int direction_snapshot[APP_MOTOR_COUNT] = {0};
+    bool flipped = false;
+
+    if (out_flipped == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+    /* Toggle once in hardware.c so console, MQTT, PID, and state-machine calls all share one direction map. */
+    s_direction_flipped = !s_direction_flipped;
+    flipped = s_direction_flipped;
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        /* Snapshot current logical outputs so moving conveyors reverse as soon as the flip command runs. */
+        pwm_snapshot[i] = motors[i].pwm;
+        direction_snapshot[i] = motors[i].direction;
+    }
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
+    for (int i = 0; i < APP_MOTOR_COUNT; i++) {
+        if (pwm_snapshot[i] > 0) {
+            const esp_err_t err = set_motor(motors[i].id, pwm_snapshot[i], direction_snapshot[i]);
+
+            if (err != ESP_OK) {
+                return err;
+            }
+        }
+    }
+
+    *out_flipped = flipped;
+    return ESP_OK;
+}
+
+/* Reports the runtime direction map so job logic can match sensor order to the active travel direction. */
+esp_err_t hardware_get_direction_flipped(bool *out_flipped)
+{
+    if (out_flipped == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (motor_mutex != NULL) {
+        xSemaphoreTake(motor_mutex, portMAX_DELAY);
+    }
+    /* Read under the same mutex used by flip_direction so a job starts with one stable direction map. */
+    *out_flipped = s_direction_flipped;
+    if (motor_mutex != NULL) {
+        xSemaphoreGive(motor_mutex);
+    }
+
     return ESP_OK;
 }
 

@@ -25,6 +25,7 @@
 #include "tasks/hardware.h"
 
 #define MQTT_COMMAND_ID_MAX_LEN 96
+#define MQTT_COMMAND_NAME_MAX_LEN 32
 #define MQTT_COMMAND_QUEUE_LENGTH 8
 #define MQTT_TOPIC_MAX_LEN 96
 #define MQTT_STATUS_TASK_STACK_SIZE 4096
@@ -36,6 +37,7 @@ typedef enum {
     MQTT_COMMAND_TRAY_RECEIVE,
     MQTT_COMMAND_TRAY_TRANSMIT,
     MQTT_COMMAND_GET_COMMANDS,
+    MQTT_COMMAND_FLIP_DIRECTION,
 } mqtt_command_id_t;
 
 typedef struct {
@@ -46,6 +48,7 @@ typedef struct {
 typedef struct {
     mqtt_command_id_t command;
     char command_id[MQTT_COMMAND_ID_MAX_LEN];
+    char command_name[MQTT_COMMAND_NAME_MAX_LEN];
 } mqtt_command_t;
 
 static const char *TAG = APP_MOTOR_APP_NAME;
@@ -56,6 +59,7 @@ static const mqtt_command_entry_t s_commands[] = {
     {"tray_receive", MQTT_COMMAND_TRAY_RECEIVE},
     {"tray_transmit", MQTT_COMMAND_TRAY_TRANSMIT},
     {"get_commands", MQTT_COMMAND_GET_COMMANDS},
+    {"flip_direction", MQTT_COMMAND_FLIP_DIRECTION},
 };
 
 static esp_mqtt_client_handle_t s_client;
@@ -121,8 +125,11 @@ static const char *backend_status_text(statemachine_status_t status)
 static void publish_result_payload(cJSON *payload)
 {
     char *text = NULL;
+    int message_id = 0;
 
     if (payload == NULL || s_client == NULL || !s_connected) {
+        /* Log skipped result publishes so missing ACKs can be tied to connection state. */
+        ESP_LOGW(TAG, "mqtt result skipped connected=%d client=%p", s_connected, (void *)s_client);
         return;
     }
 
@@ -132,7 +139,13 @@ static void publish_result_payload(cJSON *payload)
         return;
     }
 
-    (void)esp_mqtt_client_publish(s_client, s_result_topic, text, 0, 1, 0);
+    /* Keep the result payload visible in the terminal because ACK loss is the symptom being debugged. */
+    message_id = esp_mqtt_client_publish(s_client, s_result_topic, text, 0, 1, 0);
+    if (message_id < 0) {
+        ESP_LOGE(TAG, "mqtt result publish failed topic=%s payload=%s", s_result_topic, text);
+    } else {
+        ESP_LOGI(TAG, "mqtt result publish topic=%s msg_id=%d payload=%s", s_result_topic, message_id, text);
+    }
     cJSON_free(text);
 }
 
@@ -290,22 +303,31 @@ static void handle_mqtt_data(const esp_mqtt_event_handle_t event)
 
     command_json = cJSON_GetObjectItemCaseSensitive(payload, "command");
     if (!cJSON_IsString(command_json) || command_json->valuestring == NULL) {
+        /* Show that the ESP received this command_id even though the command body is unusable. */
+        ESP_LOGW(TAG, "mqtt command missing command command_id=%s", command.command_id);
         publish_result(command.command_id, "failure", "missing command");
         cJSON_Delete(payload);
         return;
     }
     if (!find_command(command_json->valuestring, &command.command)) {
+        /* Include the backend command text so typos like spaces vs underscores are obvious. */
+        ESP_LOGW(TAG, "mqtt command unknown command_id=%s command=%s", command.command_id, command_json->valuestring);
         publish_result(command.command_id, "failure", "unknown command");
         cJSON_Delete(payload);
         return;
     }
+    strlcpy(command.command_name, command_json->valuestring, sizeof(command.command_name));
 
     if (xQueueSend(s_command_queue, &command, 0) != pdTRUE) {
+        /* Queue-full logs prove the MQTT packet arrived but could not enter the worker task. */
+        ESP_LOGW(TAG, "mqtt command queue full command_id=%s command=%s", command.command_id, command.command_name);
         publish_result(command.command_id, "failure", "rejected: mqtt command queue full");
         cJSON_Delete(payload);
         return;
     }
 
+    /* This is the terminal breadcrumb that the command reached the ESP and was queued. */
+    ESP_LOGI(TAG, "mqtt command received command_id=%s command=%s", command.command_id, command.command_name);
     publish_result(command.command_id, "received", "command received");
     cJSON_Delete(payload);
 }
@@ -343,16 +365,34 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         s_connected = true;
+        /* Log subscription setup so receive failures can be separated from handler failures. */
+        ESP_LOGI(TAG, "mqtt connected, subscribing topic=%s", s_command_topic);
         (void)esp_mqtt_client_subscribe(s_client, s_command_topic, 1);
         publish_node_status_if_changed();
         break;
     case MQTT_EVENT_DISCONNECTED:
         s_connected = false;
+        /* Connection loss explains missing command callbacks and missing result publishes. */
+        ESP_LOGW(TAG, "mqtt disconnected");
+        break;
+    case MQTT_EVENT_ERROR:
+        if (event != NULL && event->error_handle != NULL) {
+            /* Print the transport/broker error fields so EOF disconnects can be tied to TCP, TLS, or broker refusal. */
+            ESP_LOGW(TAG, "mqtt error type=%d tls=%s stack=0x%x sock_errno=%d connect_return=%d",
+                     event->error_handle->error_type,
+                     esp_err_to_name(event->error_handle->esp_tls_last_esp_err),
+                     event->error_handle->esp_tls_stack_err,
+                     event->error_handle->esp_transport_sock_errno,
+                     event->error_handle->connect_return_code);
+        }
         break;
     case MQTT_EVENT_DATA:
         if (event != NULL && event->topic != NULL && event->data != NULL &&
             event->topic_len == (int)strlen(s_command_topic) &&
             strncmp(event->topic, s_command_topic, event->topic_len) == 0) {
+            /* Print the exact inbound topic/payload before JSON parsing changes the evidence. */
+            ESP_LOGI(TAG, "mqtt rx topic=%.*s payload=%.*s", event->topic_len, event->topic,
+                     event->data_len, event->data);
             handle_mqtt_data(event);
         }
         break;
@@ -437,6 +477,7 @@ esp_err_t mqtt_init(void)
     ESP_RETURN_ON_ERROR(build_topics(), TAG, "build MQTT topics");
 
     /* Create the MQTT client object that will connect to APP_MOTOR_MQTT_URI. */
+    ESP_LOGI(TAG, "mqtt init uri=%s client_id=%s", APP_MOTOR_MQTT_URI, APP_MOTOR_MQTT_CLIENT_ID);
     s_client = esp_mqtt_client_init(&mqtt_config);
     if (s_client == NULL) {
         return ESP_ERR_NO_MEM;
@@ -480,6 +521,8 @@ void mqtt_task(void *arg)
             continue;
         }
 
+        /* Worker-side log proves the queued command reached the code that sends final ACKs. */
+        ESP_LOGI(TAG, "mqtt command handling command_id=%s command=%s", command.command_id, command.command_name);
         switch (command.command) {
         case MQTT_COMMAND_ACK_TEST:
             publish_result(command.command_id, "success", "ack test ok");
@@ -514,6 +557,21 @@ void mqtt_task(void *arg)
         case MQTT_COMMAND_GET_COMMANDS:
             publish_commands_result(command.command_id);
             break;
+
+        case MQTT_COMMAND_FLIP_DIRECTION:
+        {
+            bool flipped = false;
+
+            /* MQTT uses hardware.c's shared flip state so remote and console commands cannot diverge. */
+            const esp_err_t err = hardware_flip_direction(&flipped);
+
+            if (err == ESP_OK) {
+                publish_result(command.command_id, "success", flipped ? "direction flipped on" : "direction flipped off");
+            } else {
+                publish_result(command.command_id, "failure", esp_err_to_name(err));
+            }
+            break;
+        }
         }
     }
 }

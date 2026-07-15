@@ -567,6 +567,42 @@ ERR BAD_CONFIG_KEY
 ERR ESP_ERR_INVALID_ARG
 ```
 
+## `flip_direction`
+
+Toggles the runtime conveyor direction map.
+
+Input:
+
+```text
+flip_direction
+```
+
+Effect:
+
+- Calls `hardware_flip_direction(&flipped)`.
+- Makes future `set_motor()` calls drive the opposite BTS7960 PWM side for the same direction value.
+- Reapplies any currently nonzero motor output so an already-moving conveyor reverses immediately.
+- Makes `jobrx` wait at the upstream sensor and stop at the downstream sensor while flipped.
+- Leaves the compile-time direction macros unchanged.
+
+Success output:
+
+```text
+OK FLIP_DIRECTION flipped=1
+```
+
+Run the command again to restore the default map:
+
+```text
+OK FLIP_DIRECTION flipped=0
+```
+
+Error outputs:
+
+```text
+ERR BAD_ARGS
+```
+
 ## `status`
 
 Prints firmware identity, available commands, and configured motor IDs.
@@ -588,6 +624,7 @@ Success output includes lines like:
 ```text
 STATUS app_name=conveyor
 COMMAND setmotor - Set raw motor output: setmotor <motor_id> <pwm> <dir>
+COMMAND flip_direction - Flip runtime conveyor direction map: flip_direction
 MOTOR M0
 ```
 
@@ -670,5 +707,5 @@ serial command
   -> motors[] shared state and/or GPIO/LEDC
 ```
 
-`setmotor`, `stop`, and `stopmotor` apply hardware output immediately. The
+`setmotor`, `stop`, `stopmotor`, and `flip_direction` apply hardware output immediately. The
 hardware task only polls encoder and sensor feedback into `motors[]`.

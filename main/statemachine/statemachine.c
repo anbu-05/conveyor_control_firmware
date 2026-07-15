@@ -159,6 +159,13 @@ static statemachine_result_t run_receive_job(void)
     TickType_t job_start = xTaskGetTickCount();
     TickType_t phase_start = job_start;
     tray_sensor_snapshot_t sensors = {0};
+    bool direction_flipped = false;
+
+    /* Use the current runtime travel direction for the whole RX job so entry and arrival sensors stay paired. */
+    if (hardware_get_direction_flipped(&direction_flipped) != ESP_OK) {
+        finish_job(STATEMACHINE_JOB_RECEIVE, STATEMACHINE_RESULT_JOB_REJECTED, false);
+        return STATEMACHINE_RESULT_JOB_REJECTED;
+    }
 
     /* Read initial tray presence before accepting a receive job. */
     s_status = STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY;
@@ -175,9 +182,10 @@ static statemachine_result_t run_receive_job(void)
         switch (state) {
         case RECEIVE_WAITING_FOR_TRAY:
             s_status = STATEMACHINE_STATUS_RECEIVE_WAITING_FOR_TRAY;
-            /* Read sensors while waiting for downstream tray entry. */
+            /* Wait on the entry sensor for the active travel direction. */
             sensors = read_tray_sensors();
-            if (sensors.downstream_detected) {
+            if ((!direction_flipped && sensors.downstream_detected) ||
+                (direction_flipped && sensors.upstream_detected)) {
                 /* Ask this module's motor helper to begin moving the tray upstream. */
                 if (!start_moving_upstream()) {
                     finish_job(STATEMACHINE_JOB_RECEIVE, STATEMACHINE_RESULT_TRAY_TRANSFER_STUCK, true);
@@ -200,9 +208,10 @@ static statemachine_result_t run_receive_job(void)
 
         case RECEIVE_MOVING_TRAY:
             s_status = STATEMACHINE_STATUS_RECEIVE_MOVING_TRAY;
-            /* Read sensors while waiting for upstream tray arrival. */
+            /* Stop on the arrival sensor for the same travel direction captured at job start. */
             sensors = read_tray_sensors();
-            if (sensors.upstream_detected) {
+            if ((!direction_flipped && sensors.upstream_detected) ||
+                (direction_flipped && sensors.downstream_detected)) {
                 state = RECEIVE_TRAY_RECEIVED;
                 break;
             }

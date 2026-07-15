@@ -50,6 +50,7 @@ typedef enum {
     CONSOLE_COMMAND_GETCONFIG,
     CONSOLE_COMMAND_SETCONFIG,
     CONSOLE_COMMAND_RESETCONFIG,
+    CONSOLE_COMMAND_FLIP_DIRECTION,
     CONSOLE_COMMAND_GETSENSORS,
     CONSOLE_COMMAND_STATUS,
 } console_command_id_t;
@@ -85,6 +86,7 @@ static const console_command_entry_t s_commands[] = {
     {"getconfig", "Read runtime config: getconfig [key]", CONSOLE_COMMAND_GETCONFIG},
     {"setconfig", "Set runtime config in RAM: setconfig <key> <value>", CONSOLE_COMMAND_SETCONFIG},
     {"resetconfig", "Reset runtime config to flash default: resetconfig <key>", CONSOLE_COMMAND_RESETCONFIG},
+    {"flip_direction", "Flip runtime conveyor direction map: flip_direction", CONSOLE_COMMAND_FLIP_DIRECTION},
     {"getsensors", "Get current sensor states: getsensors <motor_id>", CONSOLE_COMMAND_GETSENSORS},
     {"status", "Show firmware, commands, and motors: status", CONSOLE_COMMAND_STATUS},
 };
@@ -654,6 +656,26 @@ static int handle_console_command(int argc, char **argv)
         }
 
         printf("OK RESETCONFIG %s\n", config_name);
+        return 0;
+    }
+
+    case CONSOLE_COMMAND_FLIP_DIRECTION: {
+        bool flipped = false;
+
+        /* flip_direction changes hardware.c's output map without rewriting compile-time machine config. */
+        if (argc != 1) {
+            printf("ERR BAD_ARGS\n");
+            return 0;
+        }
+
+        /* Call the shared hardware API so console and MQTT flip the exact same runtime state. */
+        err = hardware_flip_direction(&flipped);
+        if (err != ESP_OK) {
+            printf("ERR %s\n", esp_err_to_name(err));
+            return 0;
+        }
+
+        printf("OK FLIP_DIRECTION flipped=%d\n", flipped ? 1 : 0);
         return 0;
     }
 
