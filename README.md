@@ -20,7 +20,7 @@ Implemented:
 - One PID task per configured motor.
 - PID APIs: `set_position()`, `get_position()`, `set_speed()`, `get_speed()`, `set_offset()`, `set_pid_gains()`, and `get_pid_gains()`.
 - Conveyor state-machine APIs: `statemachine_jobrx()`, `statemachine_jobtx()`, and `statemachine_get_status()`.
-- MQTT commands: `ack_test`, `tray_receive`, `tray_transmit`, and `get_commands`.
+- MQTT commands: `ack_test`, `tray_receive`, `tray_transmit`, `get_commands`, and `flip_direction`.
 
 In progress / placeholders:
 
@@ -212,16 +212,16 @@ The firmware connects as an MQTT client using the compile-time values in
 ```text
 WiFi SSID: thrd_warehouse
 Broker: 192.168.1.183:1883
-ESP MQTT client id: factory
-Machine id: C1
+ESP MQTT client id: conveyor-C0
+Machine id: C0
 ```
 
 The active topics for this firmware image are:
 
 ```text
-factory/conveyor/C1/command
-factory/conveyor/C1/result
-factory/conveyor/C1/node_status
+factory/conveyor/C0/command
+factory/conveyor/C0/result
+factory/conveyor/C0/node_status
 ```
 
 Install the Mosquitto CLI tools on your development machine:
@@ -281,8 +281,8 @@ and is not published as a correlated MQTT result.
 
 The current MQTT command set is intentionally smaller than the serial console.
 Backend MQTT supports only `ack_test`, `tray_receive`, `tray_transmit`, and
-`get_commands`; local debug and low-level motion commands remain serial-console
-features.
+`get_commands`, plus `flip_direction` for runtime direction-map reversal; local
+debug and low-level motion commands remain serial-console features.
 
 ## Serial Web Driver
 
@@ -322,8 +322,8 @@ Typical workflow:
 The web driver exposes the current ESP console commands over serial, including
 `status`, `get_smstatus`, `getconfig`, `setconfig`, `resetconfig`, `jobrx`,
 `jobtx`, `setmotor`, `stopmotor`, `stop`, `setposition`, `getposition`,
-`get_pidmode`, `pid_control`, `setoffset`, and `getsensors`. The raw console input can be
-used for any firmware command that is not represented by a button.
+`get_pidmode`, `pid_control`, `setoffset`, `flip_direction`, and `getsensors`.
+The raw console input can be used for any firmware command that is not represented by a button.
 
 ### PID Tuning
 
