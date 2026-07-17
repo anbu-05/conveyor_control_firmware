@@ -2,6 +2,8 @@
 
 ESP-IDF firmware for an ESP32-S3 motor-control node.
 
+Demo video: [`docs/conveyor-working-demo.mp4`](docs/conveyor-working-demo.mp4)
+
 The current implementation is focused on local serial debugging, motor hardware
 control, encoder/sensor polling, runtime config, per-motor PID task ownership,
 receive/transmit tray state-machine jobs, and a small backend-facing MQTT command
